@@ -1,0 +1,130 @@
+import React, { useState, useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Box, CircularProgress, Typography } from "@mui/material";
+import LoginScreen from "./components/LoginScreen";
+import Dashboard from "./components/Dashboard";
+import ProformaEditor from "./components/ProformaEditor";
+import AccountSettings from "./components/AccountSettings";
+import ProductFieldAdd from "./components/ProductFieldAdd";
+import { storeGet, storeSet } from "./lib/storage";
+import { seedDemoProforma, seedUsers } from "./lib/seedData";
+import type { Proforma, Session, UsersMap } from "./types";
+
+const CURRENT_SESSION_KEY = "session:current";
+
+/**
+ * App yalnızca oturumu (kim giriş yapmış) ve rota tablosunu yönetir.
+ * Proforma verisi burada TUTULMAZ — her ekran kendi ihtiyacı olan veriyi
+ * kendisi yükler/kaydeder: Dashboard listeyi kendisi çeker, ProformaEditor
+ * düzenlediği tek proformayı kendisi yükleyip kaydeder. Bu, App.tsx'i
+ * sayfa yönlendirmesinden ayrı bir "global proforma deposu" olmaktan çıkarır.
+ */
+export default function App() {
+  const [booted, setBooted] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+
+  // Boot: admin + demo hesaplarının HER ZAMAN var ve doğru şemada olduğundan
+  // emin ol (eski/eksik bir "users" kaydını onarır, firma kayıtlarını silmez).
+  // Ardından, varsa daha önce giriş yapılmış oturumu geri yükle — böylece
+  // /dashboard, /proforma/edit/3 gibi adresler sayfa yenilense bile çalışır.
+  useEffect(() => {
+    (async () => {
+      const existing = await storeGet<UsersMap>("users", {});
+      const seeded = seedUsers();
+      const merged: UsersMap = { ...existing };
+      let changed = false;
+      for (const uname of Object.keys(seeded)) {
+        const u = merged[uname];
+        if (!u || !u.role || !u.seller || typeof u.password !== "string") {
+          merged[uname] = seeded[uname];
+          changed = true;
+        }
+      }
+      if (changed) await storeSet("users", merged);
+
+      const demoProformas = await storeGet<Proforma[] | null>("proformas:demo", null);
+      if (demoProformas === null) {
+        await storeSet("proformas:demo", [seedDemoProforma(merged.demo.seller)]);
+      }
+      const adminProformas = await storeGet<Proforma[] | null>("proformas:admin", null);
+      if (adminProformas === null) {
+        await storeSet("proformas:admin", []);
+      }
+
+      const saved = await storeGet<{ username: string } | null>(CURRENT_SESSION_KEY, null);
+      if (saved && merged[saved.username]) {
+        const u = merged[saved.username];
+        setSession({ username: saved.username, name: u.name, role: u.role, email: u.email, seller: u.seller });
+      }
+
+      setBooted(true);
+    })();
+  }, []);
+
+  const handleLogin = async (s: Session) => {
+    setSession(s);
+    await storeSet(CURRENT_SESSION_KEY, { username: s.username });
+  };
+
+  const handleLogout = async () => {
+    setSession(null);
+    await storeSet(CURRENT_SESSION_KEY, null);
+  };
+
+  if (!booted) {
+    return (
+      <Box sx={{ minHeight: 500, display: "flex", alignItems: "center", justifyContent: "center", gap: 1.5 }}>
+        <CircularProgress size={20} thickness={5} />
+        <Typography variant="body2" color="text.secondary">yükleniyor…</Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ minHeight: 600, width: "100%" }}>
+      <BrowserRouter>
+        <Routes>
+          <Route
+            path="/login"
+            element={session ? <Navigate to="/dashboard" replace /> : <LoginScreen onLogin={handleLogin} />}
+          />
+
+          <Route
+            path="/dashboard"
+            element={session ? <Dashboard session={session} onLogout={handleLogout} /> : <Navigate to="/login" replace />}
+          />
+
+          <Route
+            path="/proforma/add"
+            element={session ? <ProformaEditor session={session} /> : <Navigate to="/login" replace />}
+          />
+
+          <Route
+            path="/proforma/edit/:id"
+            element={session ? <ProformaEditor session={session} /> : <Navigate to="/login" replace />}
+          />
+
+          <Route
+            path="/account-settings"
+            element={session ? <AccountSettings session={session} onSessionUpdate={(s) => setSession(s)} /> : <Navigate to="/login" replace />}
+          />
+
+          <Route
+            path="/product-field-add"
+            element={
+              !session ? (
+                <Navigate to="/login" replace />
+              ) : session.role === "admin" ? (
+                <ProductFieldAdd />
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
+            }
+          />
+
+          <Route path="*" element={<Navigate to={session ? "/dashboard" : "/login"} replace />} />
+        </Routes>
+      </BrowserRouter>
+    </Box>
+  );
+}
