@@ -24,48 +24,124 @@ export interface PaymentInfo {
   iban: string;
 }
 
-export interface ProductRow {
-  id: string;
-  kod: string;
-  isim: string;
-  gtip: string;
-  koliSayisi: number;
-  koliIciAdet: number;
-  birim: number;
-}
-
 export interface Proforma {
-  id: string;
-  tarih: string;
-  gecerlilik: string;
-  seller: SellerInfo;
-  buyer: BuyerInfo;
-  products: ProductRow[];
-  conditions: string[];
-  payment: PaymentInfo;
-  iskonto: number;
-  /** İskonto akordeonu açık mı (kapalıysa iskonto toplam hesaba katılmaz). */
-  iskontoEtkin: boolean;
+  Id: number;
+  code?: string;
+  user_id: number;
+
+
+  customer_name?: string;
+  buyer_name?: string;
+  province?: string;
+  state?: string;
+  address?: string;
+  phone?: string;
+  buyer_email?: string;
+
+  interlocuter_name?: string;
+  interlocuter_phone?: string;
+  interlocuter_email?: string;
+  interlocuter_title?: string;
+
+  pay_title?: string;
+  bank?: string;
+  iban?: string;
+
+  discount: number;
+
+  google_map_link?: string;
+  phone_link?: string;
+  website_link?: string;
+
+  products: Product[];
+  Conditions: Condition[];
 }
 
+export interface Product {
+  Id: number;
+  name: string;
+  gtype?: string;
+  parcel?: number;
+  code: string;
+  parcel_inside?: number;
+  unit?: number;
+  proforma_id: number;
+  Proforma: Proforma;
+  DynamicValues: DynamicValue[];
+}
+
+
+export interface Condition {
+  Id: number;
+  name: string;
+  proforma_id: number;
+  Proforma: Proforma;
+}
+
+export interface DynamicValue {
+  Id: number;
+  name: string;
+  product_id: number;
+  Product: Product;
+  dynamic_field_id: number;
+  DynamicField: DynamicField;
+}
+
+export interface DynamicField {
+  Id: number;
+  name: string;
+  dynamic_type_id: number;
+  DynamicType: DynamicType;
+  DynamicValueComboBoxes: DynamicValueComboBox[];
+  DynamicValues: DynamicValue[];
+}
+
+export interface DynamicType {
+  Id: number;
+  name: string;
+  DynamicFields: DynamicField[];
+}
+
+export interface Role {
+  Id: number;
+
+  name: string;
+}
+
+export interface DynamicValueComboBox {
+  Id: number;
+  value: string;
+  dynamic_field_id: number;
+  DynamicField: DynamicField;
+}
 /** İki rol: admin (her şeyi yönetir) ve firma (kendi proformalarını oluşturur, ürün ekleyip düzenleyemez). */
 export type UserRole = "admin" | "firma";
 
 export interface UserAccount {
   password: string;
-  name: string;
+  fullname: string;
   email?: string;
-  role: UserRole;
+  role: string;
+  firm: string;
+  userId: number;
   /** Hesap ayarlarında tutulan satıcı bilgileri — proformalarda otomatik kullanılır. */
   seller: SellerInfo;
 }
 
 export interface Session {
   username: string;
-  name: string;
-  role: UserRole;
-  email?: string;
-  seller: SellerInfo;
+  token: string;
+  role: string;
+  phone? : string;
+  fullname?: string;
+  userId: number;
+  seller? : string;
+email?: string;
+  firm: string;
+  center_address? : string;
+  fabric_address? : string;
+  seller_email? : string;
+
 }
 
 export type UsersMap = Record<string, UserAccount>;

@@ -23,10 +23,10 @@ export function detectTripleTrigger(query: string): boolean {
 /* ---------------- totals & formatting ---------------- */
 export function calcTotals(proforma: Proforma): { araTotal: number; total: number } {
   const araTotal = proforma.products.reduce(
-    (sum, p) => sum + (Number(p.koliSayisi) || 0) * (Number(p.koliIciAdet) || 0) * (Number(p.birim) || 0),
+    (sum, p) => sum + (Number(0) || 0) * (Number(0) || 0) * (Number(p.unit) || 0),
     0
   );
-  const effectiveIskonto = proforma.iskontoEtkin ? Number(proforma.iskonto) || 0 : 0;
+  const effectiveIskonto = proforma.discount !== 0 ? Number(proforma.discount) || 0 : 0;
   const total = araTotal * (1 - effectiveIskonto / 100);
   return { araTotal, total };
 }

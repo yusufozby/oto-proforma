@@ -25,3 +25,5 @@ export async function storeSet<T>(key: string, value: T): Promise<void> {
     console.error("storage error", e);
   }
 }
+
+export const baseApi  = "http://localhost:5125";

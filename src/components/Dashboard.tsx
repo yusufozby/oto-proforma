@@ -20,7 +20,7 @@ import ChecklistIcon from "@mui/icons-material/Checklist";
 import TuneIcon from "@mui/icons-material/Tune";
 import { detectTripleTrigger, calcTotals, tl } from "../lib/helpers";
 import { downloadProformaPdf, shareProformaPdf } from "../lib/exports";
-import { storeGet, storeSet } from "../lib/storage";
+import { baseApi, storeGet, storeSet } from "../lib/storage";
 import type { Proforma, Session } from "../types";
 
 interface DashboardProps {
@@ -34,14 +34,24 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const showTripleSuggestion = detectTripleTrigger(query);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   // Proforma listesi App.tsx'ten gelmiyor — Dashboard kendi verisini kendisi yükler.
   // Her mount'ta (ör. /proforma/add'den geri dönünce) taze veri çekilmiş olur.
   useEffect(() => {
     (async () => {
-      const list = await storeGet<Proforma[]>(`proformas:${session.username}`, []);
-      setProformas(list);
+      const response = await fetch(`${baseApi}/api/Proforma/get`,{
+        method:'GET',
+        headers:{
+          'Authorization': `Bearer ${session.token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+    
+      const json = await response.json();
+      console.log("json", json)
+        console.log(json);
+      setProformas(json);
       setLoading(false);
     })();
   }, [session.username]);
@@ -50,17 +60,17 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     const q = query.trim().toLowerCase();
     if (!q) return proformas;
     return proformas.filter((p) => {
-      const inBuyer = p.buyer?.firma?.toLowerCase().includes(q);
-      const inId = p.id.toLowerCase().includes(q);
+      const inBuyer = p.buyer_name!.toLowerCase().includes(q);
+      const inId = p.code!.toLowerCase().includes(q);
       const inProducts = p.products?.some(
-        (pr) => pr.isim.toLowerCase().includes(q) || pr.kod.toLowerCase().includes(q)
+        (pr) => pr.name.toLowerCase().includes(q) || pr.code.toLowerCase().includes(q)
       );
       return inBuyer || inId || inProducts;
     });
   }, [proformas, query]);
 
   const handleDownload = async (p: Proforma) => {
-    setDownloadingId(p.id);
+    setDownloadingId(p.Id);
     try {
       await downloadProformaPdf(p);
     } finally {
@@ -68,12 +78,12 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    const next = proformas.filter((p) => p.id !== id);
+  const handleDelete = async (id: number) => {
+    const next = proformas.filter((p) => p.Id !== id);
     setProformas(next);
     await storeSet(`proformas:${session.username}`, next);
   };
-
+console.log(session)
   return (
     <Box sx={{ minHeight: 600 }}>
       <AppBar position="sticky">
@@ -84,12 +94,12 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           </Stack>
           <Box sx={{ textAlign: "right", display: { xs: "none", sm: "block" }, mr: 1.5 }}>
             <Stack direction="row" spacing={1} justifyContent="flex-end" alignItems="center">
-              <Typography variant="body2" fontWeight={600}>{session.name}</Typography>
+              <Typography variant="body2" fontWeight={600}>{session.fullname}</Typography>
               {session.role === "admin" && (
                 <Chip size="small" color="primary" icon={<AdminPanelSettingsIcon sx={{ fontSize: 14 }} />} label="Admin" />
               )}
             </Stack>
-            <Typography variant="caption" color="text.secondary">{session.seller.firma}</Typography>
+            <Typography variant="caption" color="text.secondary">{session.firm}</Typography>
           </Box>
           <IconButton onClick={() => navigate("/account-settings")} title="Hesap Ayarları"><SettingsIcon /></IconButton>
           {session.role === "admin" && (
@@ -167,29 +177,29 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                 {filtered.map((p) => {
                   const { total } = calcTotals(p);
                   return (
-                    <TableRow key={p.id} hover>
-                      <TableCell className="mono" sx={{ whiteSpace: "nowrap" }}>{p.id}</TableCell>
-                      <TableCell sx={{ whiteSpace: "nowrap" }}>{p.buyer?.firma || "İsimsiz Alıcı"}</TableCell>
-                      <TableCell className="mono" sx={{ whiteSpace: "nowrap" }}>{p.tarih}</TableCell>
+                    <TableRow key={p.Id} hover>
+                      <TableCell className="mono" sx={{ whiteSpace: "nowrap" }}>{p.code}</TableCell>
+                      <TableCell sx={{ whiteSpace: "nowrap" }}>{p.buyer_name || "İsimsiz Alıcı"}</TableCell>
+                      <TableCell className="mono" sx={{ whiteSpace: "nowrap" }}>05.04.2023</TableCell>
                       <TableCell align="right" className="mono" sx={{ whiteSpace: "nowrap", fontWeight: 600 }}>{tl(total)}</TableCell>
                       <TableCell align="center" sx={{ whiteSpace: "nowrap" }}>
-                        {p.iskontoEtkin ? (
-                          <Chip size="small" color="primary" label={`%${p.iskonto || 0}`} />
+                        {p.discount !== 0 ? (
+                          <Chip size="small" color="primary" label={`%${p.discount || 0}`} />
                         ) : (
                           <Chip size="small" label="—" sx={{ bgcolor: "#EAE6DA", color: "text.secondary" }} />
                         )}
                       </TableCell>
                       <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                        <IconButton size="small" onClick={() => handleDownload(p)} disabled={downloadingId === p.id} title="PDF indir">
+                        <IconButton size="small" onClick={() => handleDownload(p)} disabled={downloadingId === p.Id} title="PDF indir">
                           <DownloadIcon fontSize="small" color="primary" />
                         </IconButton>
-                        <IconButton size="small" onClick={() => navigate(`/proforma/edit/${p.id}`)} title="Düzenle">
+                        <IconButton size="small" onClick={() => navigate(`/proforma/edit/${p.Id}`)} title="Düzenle">
                           <EditOutlinedIcon fontSize="small" color="secondary" />
                         </IconButton>
                         <IconButton size="small" onClick={() => shareProformaPdf(p)} title="Paylaş">
                           <ShareIcon fontSize="small" color="primary" />
                         </IconButton>
-                        <IconButton size="small" onClick={() => handleDelete(p.id)} title="Sil">
+                        <IconButton size="small" onClick={() => handleDelete(p.Id)} title="Sil">
                           <DeleteOutlineIcon fontSize="small" color="error" />
                         </IconButton>
                       </TableCell>

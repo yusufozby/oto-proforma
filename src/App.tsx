@@ -7,7 +7,7 @@ import ProformaEditor from "./components/ProformaEditor";
 import AccountSettings from "./components/AccountSettings";
 import ProductFieldAdd from "./components/ProductFieldAdd";
 import { storeGet, storeSet } from "./lib/storage";
-import { seedDemoProforma, seedUsers } from "./lib/seedData";
+import { seedDemoProforma } from "./lib/seedData";
 import type { Proforma, Session, UsersMap } from "./types";
 
 const CURRENT_SESSION_KEY = "session:current";
@@ -29,42 +29,25 @@ export default function App() {
   // /dashboard, /proforma/edit/3 gibi adresler sayfa yenilense bile çalışır.
   useEffect(() => {
     (async () => {
-      const existing = await storeGet<UsersMap>("users", {});
-      const seeded = seedUsers();
-      const merged: UsersMap = { ...existing };
+   
+      const seeded : any[] = [];
       let changed = false;
-      for (const uname of Object.keys(seeded)) {
-        const u = merged[uname];
-        if (!u || !u.role || !u.seller || typeof u.password !== "string") {
-          merged[uname] = seeded[uname];
-          changed = true;
-        }
-      }
-      if (changed) await storeSet("users", merged);
+    
+  
 
-      const demoProformas = await storeGet<Proforma[] | null>("proformas:demo", null);
-      if (demoProformas === null) {
-        await storeSet("proformas:demo", [seedDemoProforma(merged.demo.seller)]);
-      }
-      const adminProformas = await storeGet<Proforma[] | null>("proformas:admin", null);
-      if (adminProformas === null) {
-        await storeSet("proformas:admin", []);
+   
+
+      const saved = await storeGet<Session | null>(CURRENT_SESSION_KEY, null);
+      console.log("saved", saved)
+      if (saved) {
+       
+        setSession(saved);
       }
 
-      const saved = await storeGet<{ username: string } | null>(CURRENT_SESSION_KEY, null);
-      if (saved && merged[saved.username]) {
-        const u = merged[saved.username];
-        setSession({ username: saved.username, name: u.name, role: u.role, email: u.email, seller: u.seller });
-      }
-
-      setBooted(true);
+      setBooted(true);  
     })();
   }, []);
 
-  const handleLogin = async (s: Session) => {
-    setSession(s);
-    await storeSet(CURRENT_SESSION_KEY, { username: s.username });
-  };
 
   const handleLogout = async () => {
     setSession(null);
@@ -79,19 +62,23 @@ export default function App() {
       </Box>
     );
   }
-
+  const handleLogin = async (s: Session) => {
+    setSession(s);
+    await storeSet(CURRENT_SESSION_KEY, s);
+  };
   return (
     <Box sx={{ minHeight: 600, width: "100%" }}>
       <BrowserRouter>
         <Routes>
           <Route
-            path="/login"
-            element={session ? <Navigate to="/dashboard" replace /> : <LoginScreen onLogin={handleLogin} />}
-          />
+             path="/login"
+             element={<LoginScreen onLogin={handleLogin} />}
+           
+        />
 
           <Route
             path="/dashboard"
-            element={session ? <Dashboard session={session} onLogout={handleLogout} /> : <Navigate to="/login" replace />}
+            element={session ? <Dashboard session={session}  onLogout={handleLogout} /> : <Navigate to="/login" replace />}
           />
 
           <Route

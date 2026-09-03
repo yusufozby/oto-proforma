@@ -22,10 +22,9 @@ import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import SearchIcon from "@mui/icons-material/Search";
 import { calcTotals, tl, structuredCloneLite } from "../lib/helpers";
-import { newProductRow, seedEmptyProforma } from "../lib/seedData";
 import { parseExcelToProducts } from "../lib/excelImport";
 import { storeGet, storeSet } from "../lib/storage";
-import type { Proforma, ProductRow, Session } from "../types";
+import type { Product, Proforma, Session } from "../types";
 
 interface ProformaEditorProps {
   session: Session;
@@ -39,23 +38,32 @@ const TABS: { key: TabKey; label: string; icon: React.ReactElement }[] = [
   { key: "payment", label: "Ödeme", icon: <CreditCardIcon fontSize="small" /> },
 ];
 
-type ColumnKey = "kod" | "isim" | "gtip" | "koli" | "koliIci" | "toplamAdet" | "birim" | "toplamTutar";
+type ColumnKey = "code" | "name" | "gtype" | "parcel" | "parcel_inside" | "totalNumber" | "unit" | "totalPrice";
 /** editable = admin bu alanı doğrudan tablodaki textfield'dan değiştirebilir. toplamAdet/toplamTutar hesaplanır, edit edilemez. */
 interface ColumnDef { key: ColumnKey; label: string; align: "left" | "center" | "right"; defaultOpen: boolean; mono?: boolean; editable: boolean; numeric?: boolean; }
 
 const COLUMNS: ColumnDef[] = [
-  { key: "kod", label: "Kod", align: "left", defaultOpen: false, mono: true, editable: true },
-  { key: "isim", label: "İsim", align: "left", defaultOpen: true, editable: true },
-  { key: "gtip", label: "GTİP", align: "center", defaultOpen: false, mono: true, editable: true },
-  { key: "koli", label: "Koli", align: "center", defaultOpen: true, mono: true, editable: true, numeric: true },
-  { key: "koliIci", label: "Koli İçi", align: "center", defaultOpen: true, mono: true, editable: true, numeric: true },
-  { key: "toplamAdet", label: "Toplam", align: "center", defaultOpen: true, mono: true, editable: false },
-  { key: "birim", label: "Birim ₺", align: "right", defaultOpen: false, mono: true, editable: true, numeric: true },
-  { key: "toplamTutar", label: "Toplam ₺", align: "right", defaultOpen: true, mono: true, editable: false },
+  { key: "code", label: "Kod", align: "left", defaultOpen: false, mono: true, editable: true },
+  { key: "name", label: "İsim", align: "left", defaultOpen: true, editable: true },
+  { key: "gtype", label: "GTİP", align: "center", defaultOpen: false, mono: true, editable: true },
+  { key: "parcel", label: "Koli", align: "center", defaultOpen: true, mono: true, editable: true, numeric: true },
+  { key: "parcel_inside", label: "Koli İçi", align: "center", defaultOpen: true, mono: true, editable: true, numeric: true },
+  { key: "totalNumber", label: "Toplam", align: "center", defaultOpen: true, mono: true, editable: false },
+  { key: "unit", label: "Birim ₺", align: "right", defaultOpen: false, mono: true, editable: true, numeric: true },
+  { key: "totalPrice", label: "Toplam ₺", align: "right", defaultOpen: true, mono: true, editable: false },
 ];
 
-const FIELD_BY_COLUMN: Partial<Record<ColumnKey, keyof ProductRow>> = {
-  kod: "kod", isim: "isim", gtip: "gtip", koli: "koliSayisi", koliIci: "koliIciAdet", birim: "birim",
+const FIELD_BY_COLUMN: Partial<
+  Record<ColumnKey, keyof Product | "totalNumber" | "totalPrice">
+> = {
+  code: "code",
+  name: "name",
+  gtype: "gtype",
+  parcel: "parcel",
+  parcel_inside: "parcel_inside",
+  totalNumber: "totalNumber",
+  unit: "unit",
+  totalPrice: "totalPrice",
 };
 
 function initialColumnState(): Record<ColumnKey, boolean> {
@@ -85,12 +93,10 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
     (async () => {
       if (id) {
         const list = await storeGet<Proforma[]>(`proformas:${session.username}`, []);
-        const found = list.find((p) => p.id === id);
+        const found = list.find((p) => p.Id.toString() === id);
         if (cancelled) return;
         if (!found) { setNotFound(true); return; }
         setPf(found);
-      } else {
-        setPf(seedEmptyProforma(session.seller));
       }
     })();
     return () => { cancelled = true; };
@@ -117,16 +123,16 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
   const hideColumn = (key: ColumnKey) => setColOpen((s) => ({ ...s, [key]: false }));
   const showColumn = (key: ColumnKey) => setColOpen((s) => ({ ...s, [key]: true }));
 
-  const addBlankProduct = () => updatePf((p) => ({ ...p, products: [...p.products, newProductRow()] }));
-  const removeProduct = (id: string) => updatePf((p) => ({ ...p, products: p.products.filter((r) => r.id !== id) }));
-  const updateProductField = (id: string, field: keyof ProductRow, value: string) =>
-    updatePf((p) => ({ ...p, products: p.products.map((r) => (r.id === id ? { ...r, [field]: value as any } : r)) }));
+  const addBlankProduct = () => updatePf((p) => ({ ...p, products: [...p.products] }));
+  const removeProduct = (id: number) => updatePf((p) => ({ ...p, products: p.products.filter((r) => r.Id !== id) }));
+  const updateProductField = (id: number, field: keyof Product, value: string) =>
+    updatePf((p) => ({ ...p, products: p.products.map((r) => (r.Id === id ? { ...r, [field]: value as any } : r)) }));
 
   const filteredProducts = useMemo(() => {
     if (!pf) return [];
     const q = productFilter.trim().toLowerCase();
     if (!q) return pf.products;
-    return pf.products.filter((r) => r.kod.toLowerCase().includes(q) || r.isim.toLowerCase().includes(q));
+    return pf.products.filter((r) => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
   }, [pf, productFilter]);
 
   const handleExcelClick = () => fileInputRef.current?.click();
@@ -170,30 +176,30 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
     if (file) await processExcelFile(file);
   };
 
-  const addCondition = () => updatePf((p) => ({ ...p, conditions: [...p.conditions, ""] }));
+  const addCondition = () => updatePf((p) => ({ ...p, conditions: [...p.Conditions, ""] }));
   const updateCondition = (i: number, value: string) =>
-    updatePf((p) => ({ ...p, conditions: p.conditions.map((c, idx) => (idx === i ? value : c)) }));
-  const removeCondition = (i: number) => updatePf((p) => ({ ...p, conditions: p.conditions.filter((_, idx) => idx !== i) }));
+    updatePf((p) => ({ ...p, conditions: p.Conditions.map((c, idx) => (idx === i ? value : c)) }));
+  const removeCondition = (i: number) => updatePf((p) => ({ ...p, conditions: p.Conditions.filter((_, idx) => idx !== i) }));
 
-  const readOnlyValue = (r: ProductRow, key: ColumnKey): string => {
-    const totalAdet = (Number(r.koliSayisi) || 0) * (Number(r.koliIciAdet) || 0);
+  const readOnlyValue = (r: Product, key: ColumnKey): string => {
+    const totalAdet = (Number(r.parcel) || 0) * (Number(r.parcel_inside) || 0);
     switch (key) {
-      case "kod": return r.kod || "—";
-      case "isim": return r.isim || "İsimsiz ürün";
-      case "gtip": return r.gtip || "—";
-      case "koli": return String(r.koliSayisi);
-      case "koliIci": return String(r.koliIciAdet);
-      case "toplamAdet": return String(totalAdet);
-      case "birim": return tl(r.birim);
-      case "toplamTutar": return tl(totalAdet * (Number(r.birim) || 0));
+      case "code": return r.code || "—";
+      case "name": return r.name || "İsimsiz ürün";
+      case "gtype": return r.gtype || "—";
+      case "parcel": return String(r.parcel);
+      case "parcel_inside": return String(r.parcel_inside || 0);
+      case "totalNumber": return String(totalAdet);
+      case "unit": return tl(r.unit || 0);
+      case "totalPrice": return tl(totalAdet * (Number(r.unit) || 0));
     }
   };
 
   const handleSave = async () => {
     if (!pf) return;
     const list = await storeGet<Proforma[]>(`proformas:${session.username}`, []);
-    const exists = list.some((p) => p.id === pf.id);
-    const next = exists ? list.map((p) => (p.id === pf.id ? pf : p)) : [pf, ...list];
+    const exists = list.some((p) => p.Id === pf.Id);
+    const next = exists ? list.map((p) => (p.Id === pf.Id ? pf : p)) : [pf, ...list];
     await storeSet(`proformas:${session.username}`, next);
     navigate("/dashboard");
   };
@@ -216,7 +222,7 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
       <AppBar position="sticky">
         <Toolbar sx={{ maxWidth: 1200, width: "100%", mx: "auto", gap: 2 }}>
           <Button startIcon={<ArrowBackIcon />} onClick={() => navigate("/dashboard")} color="inherit">Panele Dön</Button>
-          <Typography variant="body2" className="mono" color="text.secondary" sx={{ flexGrow: 1, textAlign: "center" }}>{pf.id}</Typography>
+          <Typography variant="body2" className="mono" color="text.secondary" sx={{ flexGrow: 1, textAlign: "center" }}>{pf.Id}</Typography>
           <Button variant="contained" color="primary" startIcon={<SaveIcon />} onClick={handleSave}>Kaydet</Button>
         </Toolbar>
       </AppBar>
@@ -225,16 +231,22 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
         <Paper variant="outlined" sx={{ p: 2.5, mb: 3 }}>
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6}>
-              <TextField type="date" label="Tarih" fullWidth size="small" value={pf.tarih} onChange={(e) => update(["tarih"], e.target.value)} InputLabelProps={{ shrink: true }} />
+              <TextField type="date" label="Tarih" fullWidth size="small"
+              //  value={pf.tarih} 
+               onChange={(e) => update(["tarih"], e.target.value)} InputLabelProps={{ shrink: true }} />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <TextField type="date" label="Geçerlilik" fullWidth size="small" value={pf.gecerlilik} onChange={(e) => update(["gecerlilik"], e.target.value)} InputLabelProps={{ shrink: true }} />
+              <TextField type="date" label="Geçerlilik" fullWidth size="small" 
+              // value={pf.gecerlilik}
+               onChange={(e) => update(["gecerlilik"], e.target.value)} InputLabelProps={{ shrink: true }} />
             </Grid>
           </Grid>
         </Paper>
 
         <Alert severity="info" icon={<LockIcon fontSize="small" />} sx={{ mb: 3 }}>
-          Satıcı bilgileri hesap ayarlarınızdaki firma profilinden otomatik alınır: <b>{pf.seller.firma || "—"}</b>
+          Satıcı bilgileri hesap ayarlarınızdaki firma profilinden otomatik alınır: 
+          {/* <b>{pf.seller.firma || "—"}</b> */}
+          <b>-</b>
         </Alert>
 
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2, borderBottom: 1, borderColor: "divider" }}>
@@ -244,16 +256,16 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
         <Paper variant="outlined" sx={{ p: 3 }}>
           {tab === "buyer" && (
             <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}><TextField label="Firma" fullWidth size="small" value={pf.buyer.firma} onChange={(e) => update(["buyer", "firma"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="İlçe / İl" fullWidth size="small" value={pf.buyer.ilce} onChange={(e) => update(["buyer", "ilce"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Adres" fullWidth size="small" value={pf.buyer.adres} onChange={(e) => update(["buyer", "adres"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Telefon" fullWidth size="small" value={pf.buyer.telefon} onChange={(e) => update(["buyer", "telefon"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="E-mail" fullWidth size="small" value={pf.buyer.email} onChange={(e) => update(["buyer", "email"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Firma" fullWidth size="small" value={pf.buyer_name} onChange={(e) => update(["buyer", "firma"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="İlçe / İl" fullWidth size="small" value={pf.province} onChange={(e) => update(["buyer", "ilce"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Adres" fullWidth size="small" value={pf.address} onChange={(e) => update(["buyer", "adres"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Telefon" fullWidth size="small" value={pf.phone} onChange={(e) => update(["buyer", "telefon"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="E-mail" fullWidth size="small" value={pf.buyer_email} onChange={(e) => update(["buyer", "email"], e.target.value)} /></Grid>
               <Grid item xs={12}><Divider sx={{ my: 1 }} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Muhattap İsim" fullWidth size="small" value={pf.buyer.isim} onChange={(e) => update(["buyer", "isim"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Muhattap Ünvan" fullWidth size="small" value={pf.buyer.unvan} onChange={(e) => update(["buyer", "unvan"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Muhattap Telefon" fullWidth size="small" value={pf.buyer.muhattapTelefon} onChange={(e) => update(["buyer", "muhattapTelefon"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Muhattap E-mail" fullWidth size="small" value={pf.buyer.muhattapEmail} onChange={(e) => update(["buyer", "muhattapEmail"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Muhattap İsim" fullWidth size="small" value={pf.buyer_name} onChange={(e) => update(["buyer", "isim"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Muhattap Ünvan" fullWidth size="small" value={pf.buyer_email} onChange={(e) => update(["buyer", "unvan"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Muhattap Telefon" fullWidth size="small" value={pf.interlocuter_name} onChange={(e) => update(["buyer", "muhattapTelefon"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Muhattap E-mail" fullWidth size="small" value={pf.interlocuter_phone} onChange={(e) => update(["buyer", "muhattapEmail"], e.target.value)} /></Grid>
             </Grid>
           )}
 
@@ -359,7 +371,7 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
                       </TableRow>
                     )}
                     {filteredProducts.map((r) => (
-                      <TableRow key={r.id} hover>
+                      <TableRow key={r.Id} hover>
                         {visibleColumns.map((c) => {
                           const field = FIELD_BY_COLUMN[c.key];
                           if (c.editable && field) {
@@ -370,8 +382,8 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
                                   fullWidth
                                   size="small"
                                   type={c.numeric ? "number" : "text"}
-                                  value={r[field]}
-                                  onChange={(e) => updateProductField(r.id, field, e.target.value)}
+                                  value={r[field as keyof Product] || ""}
+                                  onChange={(e) => updateProductField(r.Id, field as keyof Product, e.target.value)}
                                   className={c.mono ? "mono" : undefined}
                                   inputProps={{ style: { textAlign: c.align } }}
                                   sx={{
@@ -383,13 +395,13 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
                             );
                           }
                           return (
-                            <TableCell key={c.key} align={c.align} className={c.mono ? "mono" : undefined} sx={{ fontWeight: c.key === "toplamTutar" ? 600 : 400, whiteSpace: "nowrap" }}>
+                            <TableCell key={c.key} align={c.align} className={c.mono ? "mono" : undefined} sx={{ fontWeight: c.key === "totalPrice" ? 600 : 400, whiteSpace: "nowrap" }}>
                               {readOnlyValue(r, c.key)}
                             </TableCell>
                           );
                         })}
                         <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                          <IconButton size="small" onClick={() => removeProduct(r.id)} title="Sil"><DeleteOutlineIcon fontSize="small" color="error" /></IconButton>
+                          <IconButton size="small" onClick={() => removeProduct(r.Id)} title="Sil"><DeleteOutlineIcon fontSize="small" color="error" /></IconButton>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -404,24 +416,24 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
 
               <Box sx={{ maxWidth: 300, ml: "auto", mt: 3 }}>
                 <Accordion
-                  expanded={pf.iskontoEtkin}
-                  onChange={() => update(["iskontoEtkin"], !pf.iskontoEtkin)}
+                  expanded={pf.discount !== 0}
+                  onChange={() => update(["iskontoEtkin"], pf.discount === 0)}
                   disableGutters
                   variant="outlined"
                   sx={{
                     mb: 2,
                     "&:before": { display: "none" },
-                    bgcolor: pf.iskontoEtkin ? "background.paper" : "#EAE6DA",
-                    borderColor: pf.iskontoEtkin ? "divider" : "#DCD8CC",
+                    bgcolor: pf.discount !== 0 ? "background.paper" : "#EAE6DA",
+                    borderColor: pf.discount !== 0 ? "divider" : "#DCD8CC",
                   }}
                 >
-                  <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: pf.iskontoEtkin ? "primary.main" : "text.secondary" }} />}>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: pf.discount !== 0 ? "primary.main" : "text.secondary" }} />}>
                     <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: "100%" }}>
-                      <Typography fontWeight={600} color={pf.iskontoEtkin ? "text.primary" : "text.secondary"}>İskonto</Typography>
+                      <Typography fontWeight={600} color={pf.discount !== 0 ? "text.primary" : "text.secondary"}>İskonto</Typography>
                       <Chip
                         size="small"
-                        label={pf.iskontoEtkin ? `%${pf.iskonto || 0}` : "kapalı"}
-                        color={pf.iskontoEtkin ? "primary" : "default"}
+                        label={pf.discount !== 0 ? `%${pf.discount || 0}` : "kapalı"}
+                        color={pf.discount !== 0 ? "primary" : "default"}
                         sx={{ ml: "auto" }}
                       />
                     </Stack>
@@ -433,7 +445,7 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
                         type="number"
                         size="small"
                         fullWidth
-                        value={pf.iskonto}
+                        value={pf.discount}
                         onChange={(e) => update(["iskonto"], e.target.value)}
                       />
                       <Button
@@ -463,7 +475,7 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
 
           {tab === "conditions" && (
             <Stack spacing={1.5}>
-              {pf.conditions.map((c, i) => (
+              {pf.Conditions.map((c, i) => (
                 <Stack key={i} direction="row" spacing={1} alignItems="center">
                   <Typography variant="body2" className="mono" color="text.secondary" sx={{ width: 20 }}>{i + 1}.</Typography>
                   <TextField fullWidth size="small" value={c} onChange={(e) => updateCondition(i, e.target.value)} />
@@ -478,9 +490,9 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
 
           {tab === "payment" && (
             <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}><TextField label="Ünvan" fullWidth size="small" value={pf.payment.unvan} onChange={(e) => update(["payment", "unvan"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Banka" fullWidth size="small" value={pf.payment.banka} onChange={(e) => update(["payment", "banka"], e.target.value)} /></Grid>
-              <Grid item xs={12}><TextField label="IBAN" fullWidth size="small" className="mono" value={pf.payment.iban} onChange={(e) => update(["payment", "iban"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Ünvan" fullWidth size="small" value={pf.pay_title} onChange={(e) => update(["payment", "unvan"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Banka" fullWidth size="small" value={pf.bank} onChange={(e) => update(["payment", "banka"], e.target.value)} /></Grid>
+              <Grid item xs={12}><TextField label="IBAN" fullWidth size="small" className="mono" value={pf.iban} onChange={(e) => update(["payment", "iban"], e.target.value)} /></Grid>
             </Grid>
           )}
         </Paper>

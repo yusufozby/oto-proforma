@@ -17,7 +17,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AddIcon from "@mui/icons-material/Add";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { storeGet, storeSet } from "../lib/storage";
-import { emptySeller } from "../lib/seedData";
+
 import type { Session, UsersMap, UserRole, SellerInfo } from "../types";
 
 interface AccountSettingsProps {
@@ -39,11 +39,11 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
     ...(isAdmin ? [{ key: "users" as TabKey, label: "Kullanıcılar", icon: <GroupIcon fontSize="small" /> }] : []),
   ];
 
-  const [name, setName] = useState(session.name);
+
   const [email, setEmail] = useState(session.email || "");
   const [profileMsg, setProfileMsg] = useState("");
 
-  const [seller, setSeller] = useState<SellerInfo>(session.seller || emptySeller());
+  const [seller, setSeller] = useState<Session>(session);
   const [sellerMsg, setSellerMsg] = useState("");
 
   const [oldPw, setOldPw] = useState("");
@@ -65,9 +65,9 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
     const usersMap = await storeGet<UsersMap>("users", {});
     const current = usersMap[session.username];
     if (!current) return;
-    const updated: UsersMap = { ...usersMap, [session.username]: { ...current, name, email } };
-    await storeSet("users", updated);
-    onSessionUpdate({ ...session, name, email });
+    // const updated: UsersMap = { ...usersMap, [session.username]: { ...current, fullname: name, email } };
+    // await storeSet("users", updated);
+    onSessionUpdate({ ...session, seller_email:email });
     setProfileMsg("Profil güncellendi.");
     setTimeout(() => setProfileMsg(""), 2500);
   };
@@ -76,9 +76,9 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
     const usersMap = await storeGet<UsersMap>("users", {});
     const current = usersMap[session.username];
     if (!current) return;
-    const updated: UsersMap = { ...usersMap, [session.username]: { ...current, seller } };
-    await storeSet("users", updated);
-    onSessionUpdate({ ...session, seller });
+    // const updated: UsersMap = { ...usersMap, [session.username]: { ...current, seller } };
+    // await storeSet("users", updated);
+    onSessionUpdate({ ...session });
     setSellerMsg("Satıcı bilgileri güncellendi. Yeni oluşturulan proformalarda otomatik kullanılacak.");
     setTimeout(() => setSellerMsg(""), 3500);
   };
@@ -119,11 +119,11 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
     if (!newUser.username || !newUser.password || !newUser.firma) { setUserMsg("Kullanıcı adı, şifre ve firma zorunludur."); return; }
     const usersMap = await storeGet<UsersMap>("users", {});
     if (usersMap[newUser.username]) { setUserMsg("Bu kullanıcı adı zaten var."); return; }
-    const updated: UsersMap = {
-      ...usersMap,
-      [newUser.username]: { password: newUser.password, name: newUser.name || newUser.username, role: newUser.role, seller: { ...emptySeller(), firma: newUser.firma } },
-    };
-    await storeSet("users", updated);
+    // const updated: UsersMap = {
+    //   ...usersMap,
+    //   [newUser.username]: { password: newUser.password, fullname: newUser.name || newUser.username, role: newUser.role },
+    // };
+    // await storeSet("users", updated);
     await storeSet(`proformas:${newUser.username}`, []);
     setNewUser({ username: "", password: "", name: "", firma: "", role: "firma" });
     await refreshUsers();
@@ -147,7 +147,7 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
         <Paper variant="outlined" sx={{ p: 3 }}>
           {tab === "profile" && (
             <Stack spacing={2.5} sx={{ maxWidth: 420 }}>
-              <TextField label="Yetkili Adı" fullWidth value={name} onChange={(e) => setName(e.target.value)} />
+
               <TextField label="E-mail" fullWidth value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ornek@firma.com" />
               {profileMsg && <Alert severity="success">{profileMsg}</Alert>}
               <Box><Button variant="contained" startIcon={<SaveIcon />} onClick={saveProfile}>Kaydet</Button></Box>
@@ -157,11 +157,11 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
           {tab === "seller" && (
             <Stack spacing={2.5} sx={{ maxWidth: 480 }}>
               <Typography variant="caption" color="text.secondary">Bu bilgiler her yeni proformada satıcı olarak otomatik kullanılır.</Typography>
-              <TextField label="Firma" fullWidth value={seller.firma} onChange={(e) => setSeller({ ...seller, firma: e.target.value })} />
-              <TextField label="Merkez Adres" fullWidth value={seller.merkez} onChange={(e) => setSeller({ ...seller, merkez: e.target.value })} />
-              <TextField label="Fabrika Adres" fullWidth value={seller.fabrika} onChange={(e) => setSeller({ ...seller, fabrika: e.target.value })} />
-              <TextField label="Telefon" fullWidth value={seller.telefon} onChange={(e) => setSeller({ ...seller, telefon: e.target.value })} />
-              <TextField label="E-mail" fullWidth value={seller.email} onChange={(e) => setSeller({ ...seller, email: e.target.value })} />
+              <TextField label="Firma" fullWidth value={seller.firm} onChange={(e) => setSeller({ ...seller, firm: e.target.value })} />
+              <TextField label="Merkez Adres" fullWidth value={seller.center_address} onChange={(e) => setSeller({ ...seller, center_address: e.target.value })} />
+              <TextField label="Fabrika Adres" fullWidth value={seller.fabric_address} onChange={(e) => setSeller({ ...seller, fabric_address: e.target.value })} />
+              <TextField label="Telefon" fullWidth value={seller.phone} onChange={(e) => setSeller({ ...seller, phone: e.target.value })} />
+              <TextField label="E-mail" fullWidth value={seller.seller_email} onChange={(e) => setSeller({ ...seller, seller_email: e.target.value })} />
               {sellerMsg && <Alert severity="success">{sellerMsg}</Alert>}
               <Box><Button variant="contained" startIcon={<SaveIcon />} onClick={saveSeller}>Kaydet</Button></Box>
             </Stack>
@@ -200,7 +200,7 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
                       {Object.entries(users).map(([uname, u]) => (
                         <TableRow key={uname} hover>
                           <TableCell className="mono">{uname}</TableCell>
-                          <TableCell>{u.name}</TableCell>
+                          <TableCell>{u.fullname}</TableCell>
                           <TableCell>{u.seller?.firma}</TableCell>
                           <TableCell>
                             <Select

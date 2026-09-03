@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Box, Typography, TextField, Button, ToggleButtonGroup, ToggleButton,
   IconButton, InputAdornment, Alert, Stack,
@@ -10,23 +11,26 @@ import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import LoginIcon from "@mui/icons-material/Login";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
-import { storeGet, storeSet } from "../lib/storage";
-import { emptySeller } from "../lib/seedData";
+
 import type { UsersMap, UserRole, Session } from "../types";
+import { baseApi } from "../lib/storage";
 
 interface LoginScreenProps {
   onLogin: (session: Session) => void;
 }
 
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
+  const navigate = useNavigate();
   const [roleTab, setRoleTab] = useState<UserRole>("firma");
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
 
   const switchRoleTab = (r: UserRole | null) => {
@@ -34,54 +38,133 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     setRoleTab(r);
     setMode("login");
     setError("");
+    setSuccess("");
   };
+  // .NET'ten gelen hata gövdesi 3 farklı şekilde gelebilir:
+  //  1) BadRequest("düz string")            -> data bir string
+  //  2) Unauthorized(new { message = "…" })  -> data.message
+  //  3) [ApiController] otomatik model hatası -> data.errors / data.title
+   // .NET'ten gelen hata gövdesi birkaç farklı şekilde gelebilir:
+  //  1) BadRequest("mesaj") -> çoğu zaman text/plain, JSON.parse edilemez
+  //  2) BadRequest(new { message = "…" }) veya Unauthorized(new {...}) -> JSON obje
+  //  3) [ApiController] otomatik model hatası -> ValidationProblemDetails (data.errors)
+  const extractErrorMessage = async (response: Response, fallback: string) => {
+    const raw = await response.text();
+    if (!raw) return fallback;
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setBusy(true);
-    const users = await storeGet<UsersMap>("users", {});
+    try {
+      const data = JSON.parse(raw);
 
-    if (mode === "login") {
-      const u = users[username.trim()];
-      if (!u || u.password !== password) {
-        setError("Kullanıcı adı veya şifre hatalı.");
-        setBusy(false);
-        return;
+      if (typeof data === "string") return data;
+      if (data?.message) return data.message;
+
+      if (data?.errors) {
+        const firstField = Object.values(data.errors)[0];
+        if (Array.isArray(firstField) && firstField.length > 0) return firstField[0];
       }
-      if (u.role !== roleTab) {
-        setError(
-          roleTab === "admin"
-            ? "Bu hesap yönetici değil. Firma girişini deneyin."
-            : "Bu hesap yönetici hesabı. Admin girişini deneyin."
-        );
-        setBusy(false);
-        return;
-      }
-      onLogin({ username: username.trim(), name: u.name, role: u.role, email: u.email, seller: u.seller });
-    } else {
-      if (!username || !password || !company) {
-        setError("Lütfen tüm alanları doldurun.");
-        setBusy(false);
-        return;
-      }
-      if (users[username]) {
-        setError("Bu kullanıcı adı zaten kayıtlı.");
-        setBusy(false);
-        return;
-      }
-      const seller = { ...emptySeller(), firma: company };
-      const nextUsers: UsersMap = {
-        ...users,
-        [username]: { password, name: name || username, role: "firma", seller },
-      };
-      await storeSet("users", nextUsers);
-      await storeSet(`proformas:${username}`, []);
-      onLogin({ username, name: name || username, role: "firma", seller });
+
+      if (data?.title) return data.title;
+
+      return fallback;
+    } catch {
+      // JSON değil — muhtemelen text/plain dönen düz .NET mesajı, olduğu gibi göster
+      return raw;
     }
-    setBusy(false);
   };
+   const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
+    setError("");
+    setSuccess("");
+    setBusy(true);
+
+    try {
+      if (mode === "login") {
+        const response = await fetch(`${baseApi}/api/Auth/login`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            username: username.trim(),
+            password: password,
+            roleId: roleTab === "admin" ? 1 : 2,
+          }),
+        });
+
+        if (!response.ok) {
+          setError(await extractErrorMessage(response, "Kullanıcı adı veya şifre hatalı."));
+          return;
+        }
+
+        const data = await response.json();
+        console.log("Login response data:", data);
+
+        onLogin({ username: username.trim(), token: data.token, firm: data.firm, fullname: data.fullname, role: data.role, userId: data.userId });
+        navigate("/dashboard");
+      } else {
+        // REGISTER — email, username ve password zorunlu
+        if (!username.trim() || !password || !email.trim()) {
+          setError("Lütfen kullanıcı adı, e-posta ve şifreyi doldurun.");
+          return;
+        }
+
+        const response = await fetch(
+          `${baseApi}/api/Auth/register`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              username: username.trim(),
+              password: password,
+              email: email.trim(),
+              phone: phone.trim(),
+              firm: company.trim(),
+              roleId: 2,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          setError(await extractErrorMessage(response, "Kayıt sırasında bir hata oluştu."));
+          return;
+        }
+
+        setSuccess("Başarıyla kullanıcı oluşturuldu. Şimdi giriş yapabilirsiniz.");
+        setMode("login");
+        setPassword("");
+        setEmail("");
+        setPhone("");
+        setCompany("");
+      }
+    } catch (error) {
+      console.error(error);
+      setError("Sunucuya bağlanılamadı.");
+    } finally {
+      setBusy(false);
+    }
+  };
+           const formatPhoneTR = (raw: string) => {
+    // sadece rakamları al, en fazla 10 hane (başındaki 0 hariç, örn: 5xx xxx xx xx)
+    let digits = raw.replace(/\D/g, "");
+    if (digits.startsWith("0")) digits = digits.slice(1);
+    digits = digits.slice(0, 10);
+
+    if (digits.length === 0) return "";
+
+    let out = "0(" + digits.slice(0, 3);
+    if (digits.length >= 3) out += ")";
+    if (digits.length > 3) out += " " + digits.slice(3, 6);
+    if (digits.length > 6) out += " " + digits.slice(6, 8);
+    if (digits.length > 8) out += " " + digits.slice(8, 10);
+    return out;
+  };
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPhone(formatPhoneTR(e.target.value));
+  
+  };
   return (
     <Box sx={{ minHeight: 600, width: "100%", display: "flex" }}>
       {/* sol marka paneli */}
@@ -149,7 +232,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             <ToggleButtonGroup
               value={mode}
               exclusive
-              onChange={(_, v) => { if (v) { setMode(v); setError(""); } }}
+              onChange={(_, v) => { if (v) { setMode(v); setError(""); setSuccess(""); } }}
               fullWidth
               color="secondary"
               sx={{ mb: 3 }}
@@ -167,7 +250,15 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             <Stack spacing={2.5}>
               {mode === "register" && roleTab === "firma" && (
                 <>
-                  <TextField label="Yetkili Adı" value={name} onChange={(e) => setName(e.target.value)} fullWidth placeholder="Mehmet Kara" />
+                  <TextField label="E-posta" type="email" value={email} onChange={(e) => setEmail(e.target.value)} fullWidth required placeholder="ornek@firma.com" />
+                                   <TextField
+                    label="Telefon"
+                    value={phone}
+                    onChange={handlePhoneChange}
+                    fullWidth
+                    placeholder="0(5xx) xxx xx xx"
+                    inputProps={{ inputMode: "numeric", maxLength: 16 }}
+                  />
                   <TextField label="Firma Adı" value={company} onChange={(e) => setCompany(e.target.value)} fullWidth placeholder="Firma Ltd. Şti." />
                 </>
               )}
@@ -176,6 +267,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 fullWidth
+                required
                 placeholder={roleTab === "admin" ? "admin" : "demo"}
                 autoComplete="username"
               />
@@ -185,6 +277,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 fullWidth
+                required
                 autoComplete="current-password"
                 InputProps={{
                   endAdornment: (
@@ -198,6 +291,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
               />
 
               {error && <Alert severity="error">{error}</Alert>}
+              {success && <Alert severity="success">{success}</Alert>}
 
               <Button type="submit" variant="contained" color="primary" size="large" disabled={busy} endIcon={<LoginIcon />}>
                 {mode === "login" ? "Panele Gir" : "Hesap Oluştur"}
