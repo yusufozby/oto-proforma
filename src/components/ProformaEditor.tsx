@@ -23,11 +23,12 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import SearchIcon from "@mui/icons-material/Search";
 import { calcTotals, tl, structuredCloneLite } from "../lib/helpers";
 import { parseExcelToProducts } from "../lib/excelImport";
-import { storeGet, storeSet } from "../lib/storage";
+import { baseApi, storeGet, storeSet } from "../lib/storage";
 import type { Product, Proforma, Session } from "../types";
 
 interface ProformaEditorProps {
   session: Session;
+  isEdit: boolean;
 }
 
 type TabKey = "buyer" | "products" | "conditions" | "payment";
@@ -72,7 +73,32 @@ function initialColumnState(): Record<ColumnKey, boolean> {
   return s;
 }
 
-export default function ProformaEditor({ session }: ProformaEditorProps) {
+/**
+ * isEdit=false (yeni proforma) durumunda kullanılacak boş taslak.
+ * Proforma tipinizde başka zorunlu alanlar varsa buraya ekleyin —
+ * burada yalnızca bu dosyada kullanılan alanlar dolduruldu.
+ */
+function createBlankProforma(): Proforma {
+  return {
+    tarih: "",
+    gecerlilik: "",
+    buyer_name: "",
+    province: "",
+    address: "",
+    phone: "",
+    buyer_email: "",
+    interlocuter_name: "",
+    interlocuter_phone: "",
+    pay_title: "",
+    bank: "",
+    iban: "",
+    discount: 0,
+    conditions: [],
+    products: [],
+  } as unknown as Proforma;
+}
+
+export default function ProformaEditor({ session, isEdit }: ProformaEditorProps) {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
 
@@ -81,6 +107,7 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
   // kaydederken de doğrudan storage'a yazar.
   const [pf, setPf] = useState<Proforma | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<TabKey>("buyer");
   const [colOpen, setColOpen] = useState<Record<ColumnKey, boolean>>(initialColumnState());
   const [productFilter, setProductFilter] = useState("");
@@ -91,17 +118,37 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (id) {
-        const list = await storeGet<Proforma[]>(`proformas:${session.username}`, []);
-        const found = list.find((p) => p.Id.toString() === id);
-        if (cancelled) return;
-        if (!found) { setNotFound(true); return; }
-        setPf(found);
+      if (isEdit) {
+        if (!id) {
+          // isEdit=true ama id yok — geçersiz route, panele geri dön
+          if (!cancelled) setNotFound(true);
+          return;
+        }
+        try {
+          const response = await fetch(`${baseApi}/api/proforma/get/${id}`, {
+            headers: {
+              'Authorization': `Bearer ${session.token}`,
+            },
+          });
+          if (!response.ok) {
+            if (!cancelled) setNotFound(true);
+            return;
+          }
+          const json = await response.json();
+          if (cancelled) return;
+          if (!json) { setNotFound(true); return; }
+          setPf(json);
+        } catch {
+          if (!cancelled) setNotFound(true);
+        }
+      } else {
+        // Yeni proforma: sunucudan bir şey çekmeye gerek yok, boş taslakla başla
+        if (!cancelled) setPf(createBlankProforma());
       }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, session.username]);
+  }, [id, isEdit, session.username]);
 
   /** setPf'i null durumuna karşı güvenli hale getiren yardımcı — pf yüklenmeden bir güncelleme tetiklenemez. */
   const updatePf = (updater: (p: Proforma) => Proforma) => setPf((prev) => (prev ? updater(prev) : prev));
@@ -176,10 +223,10 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
     if (file) await processExcelFile(file);
   };
 
-  const addCondition = () => updatePf((p) => ({ ...p, conditions: [...p.Conditions, ""] }));
+  const addCondition = () => updatePf((p) => ({ ...p, conditions: [...p.conditions] }));
   const updateCondition = (i: number, value: string) =>
-    updatePf((p) => ({ ...p, conditions: p.Conditions.map((c, idx) => (idx === i ? value : c)) }));
-  const removeCondition = (i: number) => updatePf((p) => ({ ...p, conditions: p.Conditions.filter((_, idx) => idx !== i) }));
+    updatePf((p) => ({ ...p }));
+  const removeCondition = (i: number) => updatePf((p) => ({ ...p, conditions: p.conditions.filter((_, idx) => idx !== i) }));
 
   const readOnlyValue = (r: Product, key: ColumnKey): string => {
     const totalAdet = (Number(r.parcel) || 0) * (Number(r.parcel_inside) || 0);
@@ -197,11 +244,32 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
 
   const handleSave = async () => {
     if (!pf) return;
-    const list = await storeGet<Proforma[]>(`proformas:${session.username}`, []);
-    const exists = list.some((p) => p.Id === pf.Id);
-    const next = exists ? list.map((p) => (p.Id === pf.Id ? pf : p)) : [pf, ...list];
-    await storeSet(`proformas:${session.username}`, next);
-    navigate("/dashboard");
+    setSaving(true);
+    try {
+      const url = isEdit
+        ? `${baseApi}/api/proforma/update/${id}`
+        : `${baseApi}/api/proforma/create`;
+
+      const response = await fetch(url, {
+        method: isEdit ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.token}`,
+        },
+        body: JSON.stringify(pf),
+      });
+
+      if (!response.ok) {
+        setSnack({ open: true, message: "Kaydedilemedi. Lütfen tekrar deneyin.", severity: "error" });
+        return;
+      }
+
+      navigate("/dashboard");
+    } catch {
+      setSnack({ open: true, message: "Bağlantı hatası. Lütfen tekrar deneyin.", severity: "error" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (notFound) return <Navigate to="/dashboard" replace />;
@@ -222,8 +290,10 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
       <AppBar position="sticky">
         <Toolbar sx={{ maxWidth: 1200, width: "100%", mx: "auto", gap: 2 }}>
           <Button startIcon={<ArrowBackIcon />} onClick={() => navigate("/dashboard")} color="inherit">Panele Dön</Button>
-          <Typography variant="body2" className="mono" color="text.secondary" sx={{ flexGrow: 1, textAlign: "center" }}>{pf.Id}</Typography>
-          <Button variant="contained" color="primary" startIcon={<SaveIcon />} onClick={handleSave}>Kaydet</Button>
+          <Typography variant="body2" className="mono" color="text.secondary" sx={{ flexGrow: 1, textAlign: "center" }}></Typography>
+          <Button variant="contained" color="primary" startIcon={<SaveIcon />} onClick={handleSave} disabled={saving}>
+            {saving ? "Kaydediliyor…" : "Kaydet"}
+          </Button>
         </Toolbar>
       </AppBar>
 
@@ -232,21 +302,21 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6}>
               <TextField type="date" label="Tarih" fullWidth size="small"
-              //  value={pf.tarih} 
-               onChange={(e) => update(["tarih"], e.target.value)} InputLabelProps={{ shrink: true }} />
+                value={pf.created_date}
+                onChange={(e) => update(["tarih"], e.target.value)} InputLabelProps={{ shrink: true }} />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <TextField type="date" label="Geçerlilik" fullWidth size="small" 
-              // value={pf.gecerlilik}
-               onChange={(e) => update(["gecerlilik"], e.target.value)} InputLabelProps={{ shrink: true }} />
+              <TextField type="date" label="Geçerlilik" fullWidth size="small"
+                value={pf}
+                onChange={(e) => update(["gecerlilik"], e.target.value)} InputLabelProps={{ shrink: true }} />
             </Grid>
           </Grid>
         </Paper>
 
         <Alert severity="info" icon={<LockIcon fontSize="small" />} sx={{ mb: 3 }}>
-          Satıcı bilgileri hesap ayarlarınızdaki firma profilinden otomatik alınır: 
-          {/* <b>{pf.seller.firma || "—"}</b> */}
-          <b>-</b>
+          Satıcı bilgileri hesap ayarlarınızdaki firma profilinden otomatik alınır:{" "}
+          {/* <b>{pf.firma || "—"}</b> */}
+          -
         </Alert>
 
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2, borderBottom: 1, borderColor: "divider" }}>
@@ -256,22 +326,22 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
         <Paper variant="outlined" sx={{ p: 3 }}>
           {tab === "buyer" && (
             <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}><TextField label="Firma" fullWidth size="small" value={pf.buyer_name} onChange={(e) => update(["buyer", "firma"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="İlçe / İl" fullWidth size="small" value={pf.province} onChange={(e) => update(["buyer", "ilce"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Adres" fullWidth size="small" value={pf.address} onChange={(e) => update(["buyer", "adres"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Telefon" fullWidth size="small" value={pf.phone} onChange={(e) => update(["buyer", "telefon"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="E-mail" fullWidth size="small" value={pf.buyer_email} onChange={(e) => update(["buyer", "email"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Firma" fullWidth size="small" value={pf.buyer_name} onChange={(e) => update(["buyer_name"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="İlçe / İl" fullWidth size="small" value={pf.province} onChange={(e) => update(["province"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Adres" fullWidth size="small" value={pf.address} onChange={(e) => update(["address"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Telefon" fullWidth size="small" value={pf.phone} onChange={(e) => update(["phone"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="E-mail" fullWidth size="small" value={pf.buyer_email} onChange={(e) => update(["buyer_email"], e.target.value)} /></Grid>
               <Grid item xs={12}><Divider sx={{ my: 1 }} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Muhattap İsim" fullWidth size="small" value={pf.buyer_name} onChange={(e) => update(["buyer", "isim"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Muhattap Ünvan" fullWidth size="small" value={pf.buyer_email} onChange={(e) => update(["buyer", "unvan"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Muhattap Telefon" fullWidth size="small" value={pf.interlocuter_name} onChange={(e) => update(["buyer", "muhattapTelefon"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Muhattap E-mail" fullWidth size="small" value={pf.interlocuter_phone} onChange={(e) => update(["buyer", "muhattapEmail"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Muhattap İsim" fullWidth size="small" value={pf.interlocuter_name} onChange={(e) => update(["interlocuter_name"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Muhattap Ünvan" fullWidth size="small" value={pf.interlocuter_title ?? ""} onChange={(e) => update(["interlocuter_title"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Muhattap Telefon" fullWidth size="small" value={pf.interlocuter_phone} onChange={(e) => update(["interlocuter_phone"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Muhattap E-mail" fullWidth size="small" value={pf.interlocuter_email ?? ""} onChange={(e) => update(["interlocuter_email"], e.target.value)} /></Grid>
             </Grid>
           )}
 
           {tab === "products" && (
             <Box>
-            
+
               <Paper
                 variant="outlined"
                 onClick={handleExcelClick}
@@ -334,9 +404,9 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
                 </Stack>
               )}
 
-                <Typography variant="overline" color="text.secondary">
-                  {productFilter ? `${filteredProducts.length} / ${pf.products.length}` : pf.products.length} ürün
-                </Typography>
+              <Typography variant="overline" color="text.secondary">
+                {productFilter ? `${filteredProducts.length} / ${pf.products.length}` : pf.products.length} ürün
+              </Typography>
 
               <TableContainer component={Paper} variant="outlined" sx={{ overflowX: "auto" }}>
                 <Table size="small" sx={{ minWidth: 780 }}>
@@ -408,8 +478,8 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
                   </TableBody>
                 </Table>
               </TableContainer>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ my: 1.5 }} flexWrap="wrap" gap={1}>
-            
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ my: 1.5 }} flexWrap="wrap" gap={1}>
+
                 <Button size="small" variant="outlined" color="primary" startIcon={<AddIcon />} onClick={addBlankProduct}>Elle Ürün Ekle</Button>
               </Stack>
 
@@ -417,7 +487,7 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
               <Box sx={{ maxWidth: 300, ml: "auto", mt: 3 }}>
                 <Accordion
                   expanded={pf.discount !== 0}
-                  onChange={() => update(["iskontoEtkin"], pf.discount === 0)}
+                  onChange={() => update(["discount"], pf.discount === 0 ? 0 : 0)}
                   disableGutters
                   variant="outlined"
                   sx={{
@@ -446,13 +516,13 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
                         size="small"
                         fullWidth
                         value={pf.discount}
-                        onChange={(e) => update(["iskonto"], e.target.value)}
+                        onChange={(e) => update(["discount"], Number(e.target.value))}
                       />
                       <Button
                         size="small"
                         color="error"
                         startIcon={<CloseIcon />}
-                        onClick={() => { update(["iskonto"], 0); update(["iskontoEtkin"], false); }}
+                        onClick={() => update(["discount"], 0)}
                       >
                         Kaldır
                       </Button>
@@ -475,10 +545,10 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
 
           {tab === "conditions" && (
             <Stack spacing={1.5}>
-              {pf.Conditions.map((c, i) => (
+              {pf.conditions.map((c, i) => (
                 <Stack key={i} direction="row" spacing={1} alignItems="center">
                   <Typography variant="body2" className="mono" color="text.secondary" sx={{ width: 20 }}>{i + 1}.</Typography>
-                  <TextField fullWidth size="small" value={c} onChange={(e) => updateCondition(i, e.target.value)} />
+                  <TextField fullWidth size="small" value={c.name} onChange={(e) => updateCondition(i, e.target.value)} />
                   <IconButton size="small" onClick={() => removeCondition(i)}><CloseIcon fontSize="small" color="error" /></IconButton>
                 </Stack>
               ))}
@@ -490,9 +560,9 @@ export default function ProformaEditor({ session }: ProformaEditorProps) {
 
           {tab === "payment" && (
             <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}><TextField label="Ünvan" fullWidth size="small" value={pf.pay_title} onChange={(e) => update(["payment", "unvan"], e.target.value)} /></Grid>
-              <Grid item xs={12} sm={6}><TextField label="Banka" fullWidth size="small" value={pf.bank} onChange={(e) => update(["payment", "banka"], e.target.value)} /></Grid>
-              <Grid item xs={12}><TextField label="IBAN" fullWidth size="small" className="mono" value={pf.iban} onChange={(e) => update(["payment", "iban"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Ünvan" fullWidth size="small" value={pf.pay_title} onChange={(e) => update(["pay_title"], e.target.value)} /></Grid>
+              <Grid item xs={12} sm={6}><TextField label="Banka" fullWidth size="small" value={pf.bank} onChange={(e) => update(["bank"], e.target.value)} /></Grid>
+              <Grid item xs={12}><TextField label="IBAN" fullWidth size="small" className="mono" value={pf.iban} onChange={(e) => update(["iban"], e.target.value)} /></Grid>
             </Grid>
           )}
         </Paper>

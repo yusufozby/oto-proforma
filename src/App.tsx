@@ -7,9 +7,9 @@ import ProformaEditor from "./components/ProformaEditor";
 import AccountSettings from "./components/AccountSettings";
 import ProductFieldAdd from "./components/ProductFieldAdd";
 import { storeGet, storeSet } from "./lib/storage";
-import { seedDemoProforma } from "./lib/seedData";
 import type { Proforma, Session, UsersMap } from "./types";
-
+import AppointmentsAdmin from "./components/AppointmentsAdmin";
+import AppointmentsCustomer from "./components/AppointmentsCustomer";
 const CURRENT_SESSION_KEY = "session:current";
 
 /**
@@ -29,22 +29,22 @@ export default function App() {
   // /dashboard, /proforma/edit/3 gibi adresler sayfa yenilense bile çalışır.
   useEffect(() => {
     (async () => {
-   
-      const seeded : any[] = [];
-      let changed = false;
-    
-  
 
-   
+      const seeded: any[] = [];
+      let changed = false;
+
+
+
+
 
       const saved = await storeGet<Session | null>(CURRENT_SESSION_KEY, null);
       console.log("saved", saved)
       if (saved) {
-       
+
         setSession(saved);
       }
 
-      setBooted(true);  
+      setBooted(true);
     })();
   }, []);
 
@@ -71,24 +71,27 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route
-             path="/login"
-             element={<LoginScreen onLogin={handleLogin} />}
-           
-        />
+            path="/login"
+            element={<LoginScreen onLogin={handleLogin} />}
+
+          />
 
           <Route
             path="/dashboard"
-            element={session ? <Dashboard session={session}  onLogout={handleLogout} /> : <Navigate to="/login" replace />}
+            element={session ? <Dashboard session={session} onLogout={handleLogout} /> : <Navigate to="/login" replace />}
           />
 
           <Route
             path="/proforma/add"
-            element={session ? <ProformaEditor session={session} /> : <Navigate to="/login" replace />}
+            element={session && session.role === "admin" ?
+              <ProformaEditor isEdit={false} session={session} />
+
+              : session ? <Navigate to={'/dashboard'} /> : <Navigate to="/login" replace />}
           />
 
           <Route
             path="/proforma/edit/:id"
-            element={session ? <ProformaEditor session={session} /> : <Navigate to="/login" replace />}
+            element={session ? <ProformaEditor isEdit={true} session={session} /> : <Navigate to="/login" replace />}
           />
 
           <Route
@@ -108,7 +111,31 @@ export default function App() {
               )
             }
           />
+          <Route
+            path="/appointments"
+            element={
+              !session ? (
+                <Navigate to="/login" replace />
+              ) : session.role === "admin" ? (
+                <AppointmentsAdmin session={session} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
+            }
+          />
 
+          <Route
+            path="/my-appointments"
+            element={
+              !session ? (
+                <Navigate to="/login" replace />
+              ) : session.role !== "admin" ? (
+                <AppointmentsCustomer session={session} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
+            }
+          />
           <Route path="*" element={<Navigate to={session ? "/dashboard" : "/login"} replace />} />
         </Routes>
       </BrowserRouter>

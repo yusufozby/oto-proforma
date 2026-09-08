@@ -4,7 +4,11 @@ import {
   AppBar, Toolbar, Box, Typography, IconButton, Button, TextField, InputAdornment,
   Container, Card, Chip, Alert, Stack, CircularProgress,
   Table, TableHead, TableBody, TableRow, TableCell, TableContainer, Paper,
+  Avatar,
+  Divider,
 } from "@mui/material";
+import EventAvailableIcon from "@mui/icons-material/EventAvailable";
+import EventNoteIcon from "@mui/icons-material/EventNote";
 import ElectricBoltIcon from "@mui/icons-material/ElectricBolt";
 import SettingsIcon from "@mui/icons-material/Settings";
 import LogoutIcon from "@mui/icons-material/Logout";
@@ -30,6 +34,7 @@ interface DashboardProps {
 
 export default function Dashboard({ session, onLogout }: DashboardProps) {
   const navigate = useNavigate();
+
   const [proformas, setProformas] = useState<Proforma[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -40,17 +45,17 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   // Her mount'ta (ör. /proforma/add'den geri dönünce) taze veri çekilmiş olur.
   useEffect(() => {
     (async () => {
-      const response = await fetch(`${baseApi}/api/Proforma/get`,{
-        method:'GET',
-        headers:{
+      const response = await fetch(`${baseApi}/api/Proforma/get`, {
+        method: 'GET',
+        headers: {
           'Authorization': `Bearer ${session.token}`,
           'Content-Type': 'application/json'
         }
       })
-    
+
       const json = await response.json();
       console.log("json", json)
-        console.log(json);
+      console.log(json);
       setProformas(json);
       setLoading(false);
     })();
@@ -68,44 +73,212 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       return inBuyer || inId || inProducts;
     });
   }, [proformas, query]);
-
+  console.log(filtered);
   const handleDownload = async (p: Proforma) => {
-    setDownloadingId(p.Id);
+    setDownloadingId(p.id);
     try {
-      await downloadProformaPdf(p);
+      await downloadProformaPdf(p, session);
     } finally {
       setDownloadingId(null);
     }
   };
 
+
   const handleDelete = async (id: number) => {
-    const next = proformas.filter((p) => p.Id !== id);
+    const next = proformas.filter((p) => p.id !== id);
     setProformas(next);
     await storeSet(`proformas:${session.username}`, next);
   };
-console.log(session)
   return (
     <Box sx={{ minHeight: 600 }}>
-      <AppBar position="sticky">
-        <Toolbar sx={{ maxWidth: 1200, width: "100%", mx: "auto" }}>
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ flexGrow: 1 }}>
-            <ElectricBoltIcon color="primary" />
-            <Typography variant="h6">Oto Proforma</Typography>
+      <AppBar
+        position="sticky"
+        elevation={0}
+        sx={{
+          bgcolor: 'background.paper',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          backdropFilter: 'blur(20px)',
+          backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        }}
+      >
+        <Toolbar sx={{ maxWidth: 1400, width: "100%", mx: "auto", px: { xs: 2, md: 3 }, gap: 2 }}>
+          {/* Logo ve Başlık */}
+          <Stack
+            direction="row"
+            spacing={1.5}
+            alignItems="center"
+            sx={{
+              flexGrow: 1,
+              cursor: 'pointer',
+              '&:hover': { opacity: 0.8 },
+              transition: 'opacity 0.2s'
+            }}
+            onClick={() => navigate("/")}
+          >
+            <Box sx={{
+              p: 1,
+              borderRadius: 2,
+              bgcolor: 'primary.main',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'transform 0.2s',
+              '&:hover': { transform: 'scale(1.05)' }
+            }}>
+              <ElectricBoltIcon sx={{ color: 'white', fontSize: 28 }} />
+            </Box>
+            <Typography variant="h6" fontWeight={700} sx={{
+              color: 'text.primary',
+              letterSpacing: -0.5,
+              display: { xs: 'none', sm: 'block' }
+            }}>
+              Oto Proforma
+            </Typography>
+            <Chip
+              label="v2.0"
+              size="small"
+              sx={{
+                height: 20,
+                bgcolor: 'primary.light',
+                color: 'primary.dark',
+                fontWeight: 600,
+                fontSize: '0.55rem',
+                display: { xs: 'none', md: 'flex' },
+                '& .MuiChip-label': { px: 1 }
+              }}
+            />
           </Stack>
-          <Box sx={{ textAlign: "right", display: { xs: "none", sm: "block" }, mr: 1.5 }}>
-            <Stack direction="row" spacing={1} justifyContent="flex-end" alignItems="center">
-              <Typography variant="body2" fontWeight={600}>{session.fullname}</Typography>
-              {session.role === "admin" && (
-                <Chip size="small" color="primary" icon={<AdminPanelSettingsIcon sx={{ fontSize: 14 }} />} label="Admin" />
-              )}
-            </Stack>
-            <Typography variant="caption" color="text.secondary">{session.firm}</Typography>
+
+          {/* Kullanıcı Bilgileri - Modern Kart */}
+          <Box sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+
+            px: 2,
+            py: 0.75,
+            borderRadius: 3,
+            bgcolor: 'action.hover',
+            border: '1px solid transparent',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            '&:hover': {
+              bgcolor: 'action.selected',
+              borderColor: 'primary.light',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+            }
+          }}>
+            <Avatar
+              sx={{
+                width: 38,
+                height: 38,
+                bgcolor: session.role === "admin" ? 'secondary.main' : 'primary.main',
+                fontWeight: 600,
+                fontSize: 15,
+                color: 'white',
+                border: '2px solid',
+                borderColor: 'background.paper',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                transition: 'transform 0.2s',
+                '&:hover': { transform: 'scale(1.05)' }
+              }}
+            >
+              {session.firm?.charAt(0).toUpperCase()}
+            </Avatar>
+
+            <Box sx={{ minWidth: 0 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+
+                <Typography variant="body2" fontWeight={600} noWrap sx={{ maxWidth: 250 }}>
+                  {session.firm}
+                </Typography>
+                {session.role === "admin" && (
+                  <Chip
+                    size="small"
+                    color="primary"
+                    icon={<AdminPanelSettingsIcon sx={{ fontSize: 13 }} />}
+                    label="Admin"
+                    sx={{
+                      height: 20,
+                      '& .MuiChip-label': { fontSize: '0.6rem', fontWeight: 600, px: 1 },
+                      borderRadius: 1,
+                      bgcolor: 'primary.main',
+                      color: 'white',
+                      '& .MuiChip-icon': { color: 'white !important' }
+                    }}
+                  />
+                )}
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.5,
+                '&::before': {
+                  content: '""',
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  bgcolor: 'success.main',
+                  display: 'inline-block'
+                }
+              }}>
+                {session.username}
+              </Typography>
+            </Box>
           </Box>
-          <IconButton onClick={() => navigate("/account-settings")} title="Hesap Ayarları"><SettingsIcon /></IconButton>
-          {session.role === "admin" && (
-            <IconButton onClick={() => navigate("/product-field-add")} title="Dinamik Alan Ekle"><TuneIcon /></IconButton>
-          )}
-          <IconButton onClick={onLogout} title="Çıkış Yap"><LogoutIcon /></IconButton>
+
+          {/* Action Butonları */}
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <IconButton
+              onClick={() => navigate("/account-settings")}
+              title="Hesap Ayarları"
+              sx={{
+                color: 'text.secondary',
+                '&:hover': {
+                  bgcolor: 'action.hover',
+                  color: 'primary.main',
+                  transform: 'rotate(90deg)'
+                },
+                transition: 'all 0.3s'
+              }}
+            >
+              <SettingsIcon fontSize="small" />
+            </IconButton>
+
+            {session.role === "admin" && (
+              <IconButton
+                onClick={() => navigate("/product-field-add")}
+                title="Dinamik Alan Ekle"
+                sx={{
+                  color: 'text.secondary',
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                    color: 'secondary.main'
+                  },
+                  transition: 'all 0.3s'
+                }}
+              >
+                <TuneIcon fontSize="small" />
+              </IconButton>
+            )}
+
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 30 }} />
+
+            <IconButton
+              onClick={onLogout}
+              title="Çıkış Yap"
+              sx={{
+                color: 'text.secondary',
+                '&:hover': {
+                  bgcolor: 'error.light',
+                  color: 'error.main'
+                },
+                transition: 'all 0.3s'
+              }}
+            >
+              <LogoutIcon fontSize="small" />
+            </IconButton>
+          </Stack>
         </Toolbar>
       </AppBar>
 
@@ -115,9 +288,30 @@ console.log(session)
             <Typography variant="h4">Proformalar</Typography>
             <Typography variant="body2" color="text.secondary">{proformas.length} kayıt · panelinize hoş geldiniz</Typography>
           </Box>
-          <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={() => navigate("/proforma/add")}>
-            Yeni Proforma
-          </Button>
+          <Stack direction="row" spacing={1.5}>
+            {session.role === "admin" ? (
+              <Button
+                variant="contained"
+                color="secondary"
+                startIcon={<EventAvailableIcon />}
+                onClick={() => navigate("/appointments")}
+              >
+                Randevular
+              </Button>
+            ) : (
+              <Button
+                variant="contained"
+                color="warning"
+                startIcon={<EventNoteIcon />}
+                onClick={() => navigate("/my-appointments")}
+              >
+                Randevularım
+              </Button>
+            )}
+            <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={() => navigate("/proforma/add")}>
+              Yeni Proforma
+            </Button>
+          </Stack>
         </Stack>
 
         <TextField
@@ -177,10 +371,10 @@ console.log(session)
                 {filtered.map((p) => {
                   const { total } = calcTotals(p);
                   return (
-                    <TableRow key={p.Id} hover>
+                    <TableRow key={p.id} hover>
                       <TableCell className="mono" sx={{ whiteSpace: "nowrap" }}>{p.code}</TableCell>
                       <TableCell sx={{ whiteSpace: "nowrap" }}>{p.buyer_name || "İsimsiz Alıcı"}</TableCell>
-                      <TableCell className="mono" sx={{ whiteSpace: "nowrap" }}>05.04.2023</TableCell>
+                      <TableCell className="mono" sx={{ whiteSpace: "nowrap" }}>{p.created_date ? new Date(p.created_date).toLocaleDateString("tr-TR") : ""}</TableCell>
                       <TableCell align="right" className="mono" sx={{ whiteSpace: "nowrap", fontWeight: 600 }}>{tl(total)}</TableCell>
                       <TableCell align="center" sx={{ whiteSpace: "nowrap" }}>
                         {p.discount !== 0 ? (
@@ -190,16 +384,16 @@ console.log(session)
                         )}
                       </TableCell>
                       <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                        <IconButton size="small" onClick={() => handleDownload(p)} disabled={downloadingId === p.Id} title="PDF indir">
+                        <IconButton size="small" onClick={() => handleDownload(p)} disabled={downloadingId === p.id} title="PDF indir">
                           <DownloadIcon fontSize="small" color="primary" />
                         </IconButton>
-                        <IconButton size="small" onClick={() => navigate(`/proforma/edit/${p.Id}`)} title="Düzenle">
+                        <IconButton size="small" onClick={() => navigate(`/proforma/edit/${p.id}`)} title="Düzenle">
                           <EditOutlinedIcon fontSize="small" color="secondary" />
                         </IconButton>
                         <IconButton size="small" onClick={() => shareProformaPdf(p)} title="Paylaş">
                           <ShareIcon fontSize="small" color="primary" />
                         </IconButton>
-                        <IconButton size="small" onClick={() => handleDelete(p.Id)} title="Sil">
+                        <IconButton size="small" onClick={() => handleDelete(p.id)} title="Sil">
                           <DeleteOutlineIcon fontSize="small" color="error" />
                         </IconButton>
                       </TableCell>

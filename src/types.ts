@@ -25,10 +25,11 @@ export interface PaymentInfo {
 }
 
 export interface Proforma {
-  Id: number;
+  id: number;
   code?: string;
   user_id: number;
-
+  created_date?: string;
+  validity_date?: string;
 
   customer_name?: string;
   buyer_name?: string;
@@ -54,9 +55,21 @@ export interface Proforma {
   website_link?: string;
 
   products: Product[];
-  Conditions: Condition[];
+  conditions: Condition[];
 }
+export type AppointmentStatus = "Beklemede" | "Onaylandı" | "Reddedildi";
 
+export interface Appointment {
+  id: number;
+  appointment_date: string; // ISO datetime string
+  description: string;
+  user_id: number;
+  status: AppointmentStatus;
+  refuse_description?: string | null;
+  // Admin ekranında listelerken backend join edip döndürebilir:
+  firm?: string;
+  username?: string;
+}
 export interface Product {
   Id: number;
   name: string;
@@ -132,15 +145,15 @@ export interface Session {
   username: string;
   token: string;
   role: string;
-  phone? : string;
+  phone?: string;
   fullname?: string;
   userId: number;
-  seller? : string;
-email?: string;
+  seller?: string;
+  email?: string;
   firm: string;
-  center_address? : string;
-  fabric_address? : string;
-  seller_email? : string;
+  center_address?: string;
+  fabric_address?: string;
+  seller_email?: string;
 
 }
 

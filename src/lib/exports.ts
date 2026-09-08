@@ -1,35 +1,19 @@
 import jsPDF from "jspdf";
-import type { Proforma } from "../types";
+import type { Proforma, Session } from "../types";
 import { calcTotals, tl } from "./helpers";
 
 // =========================================================
 // FONT
 // =========================================================
-//
-// src/assets/fonts/
-//   Poppins-Regular.ttf
-//   Poppins-Bold.ttf
-//
-// Eğer pdf.ts dosyan src/utils içerisindeyse bu import yolu doğrudur.
-// =========================================================
 
 // @ts-ignore
-import PoppinsRegularUrl from "../assets/fonts/Poppins-Regular.ttf?url";
+import InterRegularUrl from "../assets/fonts/Inter-Regular.ttf?url";
 
 // @ts-ignore
-import PoppinsBoldUrl from "../assets/fonts/Poppins-Bold.ttf?url";
+import InterBoldUrl from "../assets/fonts/Inter-Bold.ttf?url";
 
 // =========================================================
 // İLETİŞİM İKONLARI
-// =========================================================
-//
-// src/assets/icons/
-//   phone.png
-//   whatsapp.png
-//   maps.png
-//
-// Bunlar marka logolarının kendisi (tam renkli, kare tuvale
-// ortalanmış PNG'ler) — beyaz zeminli daire üzerine basılır.
 // =========================================================
 
 // @ts-ignore
@@ -53,18 +37,24 @@ const MARGIN_RIGHT = 12;
 const MARGIN_TOP = 12;
 const MARGIN_BOTTOM = 12;
 
-const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
+const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT; // 186mm
 
 // =========================================================
-// RENKLER
+// MATERIAL RENK PALETİ
 // =========================================================
 
 const ORANGE = [240, 152, 46] as const;
-const DARK = [30, 30, 30] as const;
-const BORDER = [205, 205, 205] as const;
-const LIGHT_BG = [248, 248, 248] as const;
-const WHITE = [255, 255, 255] as const;
-const GRAY_TEXT = [95, 95, 95] as const;
+const ORANGE_DARK = [214, 124, 22] as const;
+const INK = [33, 33, 33] as const;
+const TEXT_SECONDARY = [110, 110, 110] as const;
+const DIVIDER = [224, 224, 224] as const;
+const CARD_BORDER = [214, 214, 214] as const;
+const SURFACE = [255, 255, 255] as const;
+const TABLE_HEADER_BG = [246, 246, 246] as const;
+const ROW_ALT_BG = [250, 250, 250] as const;
+const SHADOW = [232, 232, 232] as const;
+
+const CARD_RADIUS = 2.4;
 
 // =========================================================
 // GENEL HELPERS
@@ -100,13 +90,13 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 // =========================================================
-// FONTLARI PDF'E EKLE
+// FONTLARI PDF'E EKLE (Inter)
 // =========================================================
 
 async function registerFonts(pdf: jsPDF): Promise<void> {
   const [regularResponse, boldResponse] = await Promise.all([
-    fetch(PoppinsRegularUrl),
-    fetch(PoppinsBoldUrl),
+    fetch(InterRegularUrl),
+    fetch(InterBoldUrl),
   ]);
 
   if (!regularResponse.ok || !boldResponse.ok) {
@@ -121,12 +111,14 @@ async function registerFonts(pdf: jsPDF): Promise<void> {
   const regularBase64 = arrayBufferToBase64(regularBuffer);
   const boldBase64 = arrayBufferToBase64(boldBuffer);
 
-  pdf.addFileToVFS("Poppins-Regular.ttf", regularBase64);
-  pdf.addFont("Poppins-Regular.ttf", "Poppins", "normal");
+  pdf.addFileToVFS("Inter-Regular.ttf", regularBase64);
+  pdf.addFont("Inter-Regular.ttf", "Inter", "normal");
 
-  pdf.addFileToVFS("Poppins-Bold.ttf", boldBase64);
-  pdf.addFont("Poppins-Bold.ttf", "Poppins", "bold");
+  pdf.addFileToVFS("Inter-Bold.ttf", boldBase64);
+  pdf.addFont("Inter-Bold.ttf", "Inter", "bold");
 }
+
+const FONT = "Inter";
 
 // =========================================================
 // İKONLARI YÜKLE (base64)
@@ -161,35 +153,7 @@ async function registerIcons(): Promise<ContactIcons> {
 }
 
 // =========================================================
-// İLETİŞİM LİNKLERİ
-// =========================================================
-
-function buildTelUrl(phone: string): string {
-  const cleaned = safeString(phone).replace(/[^\d+]/g, "");
-  return `tel:${cleaned}`;
-}
-
-function buildWhatsappUrl(phone: string): string {
-  let digits = safeString(phone).replace(/\D/g, "");
-
-  // Türkiye numaraları için: başında 0 varsa ülke koduyla (90) değiştir
-  if (digits.startsWith("0")) {
-    digits = `90${digits.slice(1)}`;
-  } else if (!digits.startsWith("90") && digits.length === 10) {
-    digits = `90${digits}`;
-  }
-
-  return `https://wa.me/${digits}`;
-}
-
-function buildMapsUrl(address: string): string {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    safeString(address)
-  )}`;
-}
-
-// =========================================================
-// TEXT HELPERS (yazı boyutları büyütüldü)
+// TEXT HELPERS
 // =========================================================
 
 function setText(
@@ -197,12 +161,13 @@ function setText(
   text: string,
   x: number,
   y: number,
-  size = 9, // 8 -> 9
-  bold = false
+  size = 9,
+  bold = false,
+  color: readonly [number, number, number] = INK
 ) {
-  pdf.setFont("Poppins", bold ? "bold" : "normal");
+  pdf.setFont(FONT, bold ? "bold" : "normal");
   pdf.setFontSize(size);
-  pdf.setTextColor(...DARK);
+  pdf.setTextColor(...color);
   pdf.text(safeString(text), x, y);
 }
 
@@ -211,12 +176,13 @@ function drawRightText(
   text: string,
   rightX: number,
   y: number,
-  size = 9, // 8 -> 9
-  bold = false
+  size = 9,
+  bold = false,
+  color: readonly [number, number, number] = INK
 ) {
-  pdf.setFont("Poppins", bold ? "bold" : "normal");
+  pdf.setFont(FONT, bold ? "bold" : "normal");
   pdf.setFontSize(size);
-  pdf.setTextColor(...DARK);
+  pdf.setTextColor(...color);
   pdf.text(safeString(text), rightX, y, { align: "right" });
 }
 
@@ -225,12 +191,13 @@ function drawCenterText(
   text: string,
   centerX: number,
   y: number,
-  size = 9, // 8 -> 9
-  bold = false
+  size = 9,
+  bold = false,
+  color: readonly [number, number, number] = INK
 ) {
-  pdf.setFont("Poppins", bold ? "bold" : "normal");
+  pdf.setFont(FONT, bold ? "bold" : "normal");
   pdf.setFontSize(size);
-  pdf.setTextColor(...DARK);
+  pdf.setTextColor(...color);
   pdf.text(safeString(text), centerX, y, { align: "center" });
 }
 
@@ -248,7 +215,7 @@ function drawLine(
   y1: number,
   x2: number,
   y2: number,
-  color = BORDER,
+  color: readonly [number, number, number] = DIVIDER,
   width = 0.3
 ) {
   pdf.setDrawColor(...color);
@@ -256,81 +223,60 @@ function drawLine(
   pdf.line(x1, y1, x2, y2);
 }
 
-function drawRect(
+function drawCard(
   pdf: jsPDF,
   x: number,
   y: number,
-  width: number,
-  height: number,
-  fillColor?: readonly [number, number, number],
-  borderColor?: readonly [number, number, number]
-) {
-  if (fillColor) {
-    pdf.setFillColor(...fillColor);
+  w: number,
+  h: number,
+  opts?: {
+    header?: { title: string; height?: number; color?: readonly [number, number, number] };
+    elevated?: boolean;
+  }
+): number {
+  const radius = CARD_RADIUS;
+  h = h + 2;
+  // 1. Gölge (Gölgenin de dışarı turunculuk sıçratmaması için kartın arkasında tutulur)
+  if (opts?.elevated !== false) {
+    pdf.setFillColor(...SHADOW);
+    pdf.roundedRect(x + 0.6, y + 0.8, w, h, radius, radius, "F");
   }
 
-  pdf.setDrawColor(...(borderColor || BORDER));
+  // 2. Beyaz Kart Arka Planı (Tam rounded)
+  pdf.setFillColor(...SURFACE);
+  pdf.roundedRect(x, y, w, h, radius, radius, "F");
+
+  let headerHeight = 0;
+
+  if (opts?.header) {
+    headerHeight = opts.header.height ?? 8;
+    const headerColor = opts.header.color ?? ORANGE;
+
+    pdf.setFillColor(...headerColor);
+
+    // Header yüksekliği kart yüksekliğinden küçükse sadece üst taraf turuncu olsun
+    if (h > headerHeight + radius) {
+      // Üstü yuvarlatılmış header
+      pdf.roundedRect(x, y, w, headerHeight, radius, radius, "F");
+      // Üst header'ın altındaki yuvarlatmayı kapat, düz yap (sol-sağ alt köşelere taşmayacak şekilde)
+      pdf.rect(x, y + radius, w, headerHeight - radius, "F");
+    } else {
+      // Eğer kart çok kısa ise turuncu tüm kartı kaplamasın, sadece üst kısmı kaplasın
+      pdf.roundedRect(x, y, w, Math.min(headerHeight, h), radius, radius, "F");
+    }
+
+    pdf.setFont(FONT, "bold");
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(...SURFACE);
+    pdf.text(opts.header.title.toUpperCase(), x + 4, y + headerHeight / 2 + 1.8);
+  }
+
+  // 3. Dış Çerçeve (En üste basılır)
+  pdf.setDrawColor(...CARD_BORDER);
   pdf.setLineWidth(0.3);
+  pdf.roundedRect(x, y, w, h, radius, radius, "S");
 
-  let style: "F" | "S" | "FD" = "S";
-
-  if (fillColor && borderColor) {
-    style = "FD";
-  } else if (fillColor) {
-    style = "F";
-  }
-
-  pdf.rect(x, y, width, height, style);
-}
-
-function drawRoundedRect(
-  pdf: jsPDF,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius = 1.5,
-  fillColor?: readonly [number, number, number],
-  borderColor?: readonly [number, number, number]
-) {
-  if (fillColor) {
-    pdf.setFillColor(...fillColor);
-  }
-
-  pdf.setDrawColor(...(borderColor || BORDER));
-  pdf.setLineWidth(0.3);
-
-  let style: "F" | "S" | "FD" = "S";
-
-  if (fillColor && borderColor) {
-    style = "FD";
-  } else if (fillColor) {
-    style = "F";
-  }
-
-  pdf.roundedRect(x, y, width, height, radius, radius, style);
-}
-
-// =========================================================
-// SECTION TITLE (yükseklik ve font büyütüldü)
-// =========================================================
-
-function drawSectionTitle(
-  pdf: jsPDF,
-  title: string,
-  x: number,
-  y: number,
-  width: number,
-  height = 8 // 7 -> 8
-) {
-  pdf.setFillColor(...ORANGE);
-  pdf.rect(x, y, width, height, "F");
-
-  pdf.setFont("Poppins", "bold");
-  pdf.setFontSize(8.5); // 7.5 -> 8.5
-  pdf.setTextColor(...WHITE);
-
-  pdf.text(title.toUpperCase(), x + 4, y + height / 2 + 1.8);
+  return headerHeight;
 }
 
 // =========================================================
@@ -341,40 +287,33 @@ function drawHeader(pdf: jsPDF, pf: Proforma): number {
   const x = MARGIN_LEFT;
   const y = MARGIN_TOP;
 
-  // Başlık
-  setText(pdf, "PROFORMA", x, y + 10, 26, true); // 25 -> 26
+  setText(pdf, "PROFORMA", x, y + 10, 26, true);
 
-  // Sağ üst bilgiler
   drawRightText(
     pdf,
-    `Tarih: ${safeString(pf.tarih)}`,
+    `Tarih: ${safeString(pf.created_date)}`,
     PAGE_WIDTH - MARGIN_RIGHT,
     y + 5,
-    8.2, // 7.5 -> 8.2
+    8.2,
     true
   );
 
   drawRightText(
     pdf,
-    `Geçerlilik: ${safeString(pf.gecerlilik)}`,
+    `Geçerlilik: ${safeString(pf.validity_date)}`,
     PAGE_WIDTH - MARGIN_RIGHT,
     y + 10,
-    8.2, // 7.5 -> 8.2
+    8.2,
     true
   );
 
-  // Turuncu çizgi
   drawLine(pdf, x, y + 15, PAGE_WIDTH - MARGIN_RIGHT, y + 15, ORANGE, 1.1);
 
   return y + 21;
 }
 
 // =========================================================
-// İLETİŞİM İKONLARI (tıklanabilir)
-// =========================================================
-
-// =========================================================
-// İLETİŞİM İKONLARI (tıklanabilir, çerçevesiz)
+// İLETİŞİM İKONLARI
 // =========================================================
 
 function drawContactIcons(
@@ -385,47 +324,31 @@ function drawContactIcons(
   centerY: number,
   size: number
 ) {
-  const gap = 3.5; // ikonlar arası boşluk
+  const gap = 3.5;
 
   type IconDef = {
     image: string;
     url: string;
   };
 
-  // Soldan sağa: Telefon, WhatsApp, Google Maps
-  // Not: pf.seller.telefon / pf.seller.merkez neyse ona göre link üretilir —
-  // yani veri neyse (hangi telefon/adres olursa olsun) otomatik çalışır.
   const defs: IconDef[] = [
-    {
-      image: icons.phone,
-      url: "sample-phone",
-    },
-    {
-      image: icons.whatsapp,
-      url: "sample-whatsapp",
-    },
-    {
-      image: icons.maps,
-      url: "sample-maps",
-    },
+    { image: icons.phone, url: pf.phone_link ?? "" },
+    { image: icons.whatsapp, url: pf.website_link ?? "" },
+    { image: icons.maps, url: pf.google_map_link ?? "" },
   ];
 
-  // Soldan sağa yerleştir (Telefon en solda, Maps en sağda)
   let currentLeft = leftX;
 
   for (const def of defs) {
     const left = currentLeft;
     const top = centerY - size / 2;
 
-    // Çerçevesiz / zeminsiz — logo doğrudan basılır
     try {
       pdf.addImage(def.image, "PNG", left, top, size, size);
     } catch {
-      // İkon dosyası bulunamazsa/işlenemezse sessizce geç,
-      // tıklanabilir alan yine de çalışır.
+      // İkon dosyası bulunamazsa/işlenemezse sessizce geç
     }
 
-    // Tıklanabilir alan (görselin tamamını kaplayan kare)
     pdf.link(left, top, size, size, { url: def.url });
 
     currentLeft += size + gap;
@@ -433,13 +356,26 @@ function drawContactIcons(
 }
 
 // =========================================================
-// SATICI BİLGİLERİ
+// TEKLİF VERİLEN FİRMA + SATICI BİLGİLERİ
 // =========================================================
 
-function drawSeller(pdf: jsPDF, pf: Proforma, startY: number): number {
-  const x = MARGIN_LEFT;
+function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, startY: number): number {
+  const gap = 5;
+  const boxWidth = (CONTENT_WIDTH - gap) / 2;
+  const leftX = MARGIN_LEFT;
+  const rightX = MARGIN_LEFT + boxWidth + gap;
+  const titleHeight = 8;
+  const labelColWidth = 26;
 
-  const rows = [
+  const buyerRows = [
+    ["FİRMA", ""],
+    ["ADRES", "sample-adres"],
+    ["İLÇE / İL", "sample-ilce"],
+    ["TELEFON", "sample-telefon"],
+    ["E-MAİL", "sample-email"],
+  ];
+
+  const sellerRows = [
     ["FİRMA", "sample-firm"],
     ["MERKEZ", "sample-merkez"],
     ["FABRİKA", "sample-fabrika"],
@@ -447,88 +383,47 @@ function drawSeller(pdf: jsPDF, pf: Proforma, startY: number): number {
     ["E-MAİL", "sample-email"],
   ];
 
-  let currentY = startY;
-
-  for (const [label, value] of rows) {
-    setText(pdf, label, x, currentY, 9, true); // 8.2 -> 9
-    setText(pdf, value, x + 27, currentY, 9); // 8.2 -> 9
-    currentY += 5.3; // 5 -> 5.3 (biraz daha nefes payı)
-  }
-
-  return currentY + 5;
-}
-
-// =========================================================
-// ALICI + MUHATTAP
-// =========================================================
-
-function drawBuyerAndContact(pdf: jsPDF, pf: Proforma, startY: number): number {
-  const gap = 5;
-  const boxWidth = (CONTENT_WIDTH - gap) / 2;
-  const leftX = MARGIN_LEFT;
-  const rightX = MARGIN_LEFT + boxWidth + gap;
-  const titleHeight = 8; // 7 -> 8
-
-  const buyerRows = [
-    ["FİRMA", "sample-firm"],
-    ["ADRES", "sample-adres"],
-    ["İLÇE / İL", "sample-ilce"],
-    ["TELEFON", "sample-telefon"],
-    ["E-MAİL", "sample-email"],
-  ];
-
-  const contactRows = [
-    ["İSİM", "sample-name"],
-    ["ÜNVAN", "sample-title"],
-    ["TELEFON", "sample-contact-phone"],
-    ["E-MAİL", "sample-contact-email"],
-  ];
-
   function calculateHeight(rows: string[][]) {
     let height = 9;
 
     for (const [, value] of rows) {
-      const lines = splitText(pdf, value, boxWidth - 36);
-      height += Math.max(6, lines.length * 5); // 5.5/4.5 -> 6/5
+      const lines = splitText(pdf, value, boxWidth - labelColWidth - 8);
+      height += Math.max(6, lines.length * 5);
     }
 
     return titleHeight + height + 3;
   }
 
   const buyerHeight = calculateHeight(buyerRows);
-  const contactHeight = calculateHeight(contactRows);
-  const boxHeight = Math.max(buyerHeight, contactHeight);
+  const sellerHeight = calculateHeight(sellerRows);
+  const boxHeight = Math.max(buyerHeight, sellerHeight);
 
-  // =======================================================
-  // SOL KUTU
-  // =======================================================
+  // Sol kart — Teklif Verilen Firma (alıcı)
+  drawCard(pdf, leftX, startY, boxWidth, boxHeight, {
+    header: { title: "Teklif Verilen Firma", height: titleHeight },
+  });
 
-  drawRoundedRect(pdf, leftX, startY, boxWidth, boxHeight, 1.5, WHITE, BORDER);
-  drawSectionTitle(pdf, "Teklif Verilen Firma", leftX, startY, boxWidth, titleHeight);
-
-  let y = startY + 14; // 13 -> 14
+  let y = startY + titleHeight + 6;
 
   for (const [label, value] of buyerRows) {
-    setText(pdf, label, leftX + 4, y, 8, true); // 7.3 -> 8
-    const lines = splitText(pdf, value, boxWidth - 36);
-    setText(pdf, lines.join("\n"), leftX + 30, y, 8); // 7.3 -> 8
-    y += Math.max(5.5, lines.length * 5); // 5/4.5 -> 5.5/5
+    setText(pdf, label, leftX + 4, y, 8, true, TEXT_SECONDARY);
+    const lines = splitText(pdf, value, boxWidth - labelColWidth - 8);
+    setText(pdf, lines.join("\n"), leftX + labelColWidth, y, 8, false, INK);
+    y += Math.max(5.5, lines.length * 5);
   }
 
-  // =======================================================
-  // SAĞ KUTU
-  // =======================================================
+  // Sağ kart — Satıcı Bilgileri
+  drawCard(pdf, rightX, startY, boxWidth, boxHeight, {
+    header: { title: "Satıcı Bilgileri", height: titleHeight },
+  });
 
-  drawRoundedRect(pdf, rightX, startY, boxWidth, boxHeight, 1.5, WHITE, BORDER);
-  drawSectionTitle(pdf, "Muhattap", rightX, startY, boxWidth, titleHeight);
+  y = startY + titleHeight + 6;
 
-  y = startY + 14; // 13 -> 14
-
-  for (const [label, value] of contactRows) {
-    setText(pdf, label, rightX + 4, y, 8, true); // 7.3 -> 8
-    const lines = splitText(pdf, value, boxWidth - 36);
-    setText(pdf, lines.join("\n"), rightX + 30, y, 8); // 7.3 -> 8
-    y += Math.max(5.5, lines.length * 5); // 5/4.5 -> 5.5/5
+  for (const [label, value] of sellerRows) {
+    setText(pdf, label, rightX + 4, y, 8, true, TEXT_SECONDARY);
+    const lines = splitText(pdf, value, boxWidth - labelColWidth - 8);
+    setText(pdf, lines.join("\n"), rightX + labelColWidth, y, 8, false, INK);
+    y += Math.max(5.5, lines.length * 5);
   }
 
   return startY + boxHeight + 6;
@@ -540,15 +435,15 @@ function drawBuyerAndContact(pdf: jsPDF, pf: Proforma, startY: number): number {
 
 type ProductColumn = {
   key:
-    | "no"
-    | "kod"
-    | "isim"
-    | "gtip"
-    | "koliSayisi"
-    | "koliIciAdet"
-    | "totalAdet"
-    | "birim"
-    | "total";
+  | "no"
+  | "kod"
+  | "isim"
+  | "gtip"
+  | "koliSayisi"
+  | "koliIciAdet"
+  | "totalAdet"
+  | "birim"
+  | "total";
 
   title: string;
   width: number;
@@ -556,16 +451,17 @@ type ProductColumn = {
 };
 
 function getProductColumns(): ProductColumn[] {
+  // Toplam: 8 + 19 + 41 + 20 + 16 + 18 + 16 + 21 + 27 = 186mm (CONTENT_WIDTH)
   return [
     { key: "no", title: "No", width: 8, align: "center" },
-    { key: "kod", title: "Kod", width: 20, align: "left" },
-    { key: "isim", title: "İsim", width: 43, align: "left" },
-    { key: "gtip", title: "GTİP", width: 21, align: "center" },
-    { key: "koliSayisi", title: "Koli\nSayısı", width: 17, align: "center" },
-    { key: "koliIciAdet", title: "Koli İçi\nAdet", width: 19, align: "center" },
-    { key: "totalAdet", title: "Total\nAdet", width: 17, align: "center" },
-    { key: "birim", title: "Birim ₺", width: 22, align: "right" },
-    { key: "total", title: "Total ₺", width: 25, align: "right" },
+    { key: "kod", title: "Kod", width: 19, align: "left" },
+    { key: "isim", title: "İsim", width: 41, align: "left" },
+    { key: "gtip", title: "GTİP", width: 20, align: "center" },
+    { key: "koliSayisi", title: "Koli\nSayısı", width: 16, align: "center" },
+    { key: "koliIciAdet", title: "Koli İçi\nAdet", width: 18, align: "center" },
+    { key: "totalAdet", title: "Total\nAdet", width: 16, align: "center" },
+    { key: "birim", title: "Birim ₺", width: 21, align: "right" },
+    { key: "total", title: "Total ₺", width: 27, align: "right" },
   ];
 }
 
@@ -578,26 +474,26 @@ function getProductValue(
   index: number,
   key: ProductColumn["key"]
 ): string {
-  const totalAdet = numberValue(row.koliSayisi) * numberValue(row.koliIciAdet);
-  const totalTutar = totalAdet * numberValue(row.birim);
+  const totalAdet = numberValue(row.parcel) * numberValue(row.parcel_inside);
+  const totalTutar = totalAdet * numberValue(row.unit);
 
   switch (key) {
     case "no":
       return String(index + 1);
     case "kod":
-      return safeString(row.kod);
+      return safeString(row.code);
     case "isim":
-      return safeString(row.isim);
+      return safeString(row.name);
     case "gtip":
-      return safeString(row.gtip);
+      return safeString(row.gtype);
     case "koliSayisi":
-      return safeString(row.koliSayisi);
+      return safeString(row.parcel);
     case "koliIciAdet":
-      return safeString(row.koliIciAdet);
+      return safeString(row.parcel_inside);
     case "totalAdet":
       return String(totalAdet);
     case "birim":
-      return tl(numberValue(row.birim));
+      return tl(numberValue(row.unit));
     case "total":
       return tl(totalTutar);
     default:
@@ -605,8 +501,14 @@ function getProductValue(
   }
 }
 
+function columnTextX(col: ProductColumn, colStartX: number): number {
+  if (col.align === "center") return colStartX + col.width / 2;
+  if (col.align === "right") return colStartX + col.width - 3;
+  return colStartX + 3;
+}
+
 // =========================================================
-// ÜRÜN TABLOSU HEADER (yükseklik ve font büyütüldü)
+// TABLO KOLON BAŞLIK SATIRI
 // =========================================================
 
 function drawProductTableHeader(
@@ -615,45 +517,42 @@ function drawProductTableHeader(
   y: number,
   columns: ProductColumn[]
 ): number {
-  const headerHeight = 13; // 11 -> 13
+  const headerHeight = 12;
+  const tableWidth = CONTENT_WIDTH;
+
+  pdf.setFillColor(...TABLE_HEADER_BG);
+  pdf.rect(x, y, tableWidth, headerHeight, "F");
+
+  pdf.setFont(FONT, "bold");
+  pdf.setFontSize(7.3);
+  pdf.setTextColor(...TEXT_SECONDARY);
 
   let currentX = x;
 
   for (const column of columns) {
-    pdf.setFillColor(...ORANGE);
-    pdf.setDrawColor(...ORANGE);
-    pdf.rect(currentX, y, column.width, headerHeight, "FD");
-
-    pdf.setFont("Poppins", "bold");
-    pdf.setFontSize(7.3); // 6.1 -> 7.3
-    pdf.setTextColor(...WHITE);
-
     const lines = column.title.split("\n");
-    const lineHeight = 4; // 3.5 -> 4
-
+    const lineHeight = 4;
     const startLineY =
       y + headerHeight / 2 - ((lines.length - 1) * lineHeight) / 2 + 2;
 
     lines.forEach((line, index) => {
       const textY = startLineY + index * lineHeight;
-
-      if (column.align === "center") {
-        pdf.text(line, currentX + column.width / 2, textY, { align: "center" });
-      } else if (column.align === "right") {
-        pdf.text(line, currentX + column.width - 2, textY, { align: "right" });
-      } else {
-        pdf.text(line, currentX + 2, textY);
-      }
+      const textX = columnTextX(column, currentX);
+      const align = column.align === "left" ? "left" : column.align;
+      pdf.text(line, textX, textY, { align });
     });
 
     currentX += column.width;
   }
 
+  // Taşmayı önlemek için çizgiye x + 1 ile x + tableWidth - 1 marjı verildi
+  drawLine(pdf, x + 1, y + headerHeight, x + tableWidth - 1, y + headerHeight, ORANGE_DARK, 0.5);
+
   return headerHeight;
 }
 
 // =========================================================
-// ÜRÜN SATIRI (yükseklik ve font büyütüldü)
+// ÜRÜN SATIRI
 // =========================================================
 
 function drawProductRow(
@@ -665,287 +564,225 @@ function drawProductRow(
   columns: ProductColumn[],
   alternate: boolean
 ): number {
-  const rowHeight = 11.5; // 10 -> 11.5
+  const rowHeight = 11.5;
+  const tableWidth = CONTENT_WIDTH;
+
+  if (alternate) {
+    pdf.setFillColor(...ROW_ALT_BG);
+    pdf.rect(x, y, tableWidth, rowHeight, "F");
+  }
 
   let currentX = x;
 
   for (const column of columns) {
-    if (alternate) {
-      pdf.setFillColor(...LIGHT_BG);
-      pdf.rect(currentX, y, column.width, rowHeight, "F");
-    }
-
-    pdf.setDrawColor(...BORDER);
-    pdf.setLineWidth(0.25);
-    pdf.rect(currentX, y, column.width, rowHeight, "S");
-
     const value = getProductValue(row, index, column.key);
 
-    pdf.setFont("Poppins", column.key === "total" ? "bold" : "normal");
-    pdf.setFontSize(7.8); // 6.5 -> 7.8
-    pdf.setTextColor(...DARK);
+    pdf.setFont(FONT, column.key === "total" ? "bold" : "normal");
+    pdf.setFontSize(7.8);
+    pdf.setTextColor(...INK);
 
-    const lines = splitText(pdf, value, column.width - 4);
+    const lines = splitText(pdf, value, column.width - 5);
     const visibleLines = lines.slice(0, 2);
-    const lineHeight = 4.2; // 3.6 -> 4.2
+    const lineHeight = 4.2;
 
     const startY =
       y + rowHeight / 2 - ((visibleLines.length - 1) * lineHeight) / 2 + 2;
 
     visibleLines.forEach((line, lineIndex) => {
       const textY = startY + lineIndex * lineHeight;
-
-      if (column.align === "center") {
-        pdf.text(line, currentX + column.width / 2, textY, { align: "center" });
-      } else if (column.align === "right") {
-        pdf.text(line, currentX + column.width - 2, textY, { align: "right" });
-      } else {
-        pdf.text(line, currentX + 2, textY);
-      }
+      const textX = columnTextX(column, currentX);
+      const align = column.align === "left" ? "left" : column.align;
+      pdf.text(line, textX, textY, { align });
     });
 
     currentX += column.width;
   }
 
+  drawLine(pdf, x, y + rowHeight, x + tableWidth, y + rowHeight, DIVIDER, 0.25);
+
   return rowHeight;
 }
 
 // =========================================================
-// ÜRÜN TABLOSU (başlık ile tablo arasına boşluk + dış çerçeve eklendi)
+// ÜRÜN TABLOSU (Full Width)
 // =========================================================
 
 function drawProductTable(pdf: jsPDF, pf: Proforma, startY: number): number {
   const columns = getProductColumns();
+  const tableWidth = CONTENT_WIDTH; // Sayfaya tam oturt
+  const titleHeight = 8;
 
-  const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  const cardStartY = startY + 2;
+  let currentY = cardStartY + titleHeight;
 
-  // Bir önceki bloktan biraz nefes payı
-  const tableStartY = startY + 2;
-  let currentY = tableStartY;
-
-  // Ürün başlığı
-  drawSectionTitle(pdf, "Ürünler", MARGIN_LEFT, currentY, tableWidth, 8);
-  currentY += 8;
-
-  // Tablo header
   const headerHeight = drawProductTableHeader(pdf, MARGIN_LEFT, currentY, columns);
   currentY += headerHeight;
-pf.products = [];
-  // pf.products.forEach((row, index) => {
-  //   const rowHeight = 11.5;
 
-  //   // Sayfanın sonuna yaklaşıldıysa
-  //   if (currentY + rowHeight > PAGE_HEIGHT - MARGIN_BOTTOM - 15) {
-  //     pdf.addPage();
-  //     currentY = MARGIN_TOP;
+  pf.products = []; // Gerekirse ürün döngünüzü buraya açabilirsiniz.
 
-  //     // Yeni sayfa başlığı
-  //     setText(pdf, "PROFORMA", MARGIN_LEFT, currentY + 7, 13, true); // 12 -> 13
+  const cardHeight = currentY - cardStartY;
 
-  //     drawRightText(
-  //       pdf,
-  //       `Proforma ${safeString(pf.id)}`,
-  //       PAGE_WIDTH - MARGIN_RIGHT,
-  //       currentY + 7,
-  //       7.2, // 6.5 -> 7.2
-  //       true
-  //     );
+  drawCard(pdf, MARGIN_LEFT, cardStartY, tableWidth, cardHeight, {
+    header: { title: "Ürünler", height: titleHeight },
+    elevated: true,
+  });
 
-  //     currentY += 12;
-
-  //     drawLine(pdf, MARGIN_LEFT, currentY, PAGE_WIDTH - MARGIN_RIGHT, currentY, ORANGE, 0.8);
-
-  //     currentY += 5;
-
-  //     drawSectionTitle(pdf, "Ürünler - Devam", MARGIN_LEFT, currentY, tableWidth, 8);
-  //     currentY += 8;
-
-  //     const h = drawProductTableHeader(pdf, MARGIN_LEFT, currentY, columns);
-  //     currentY += h;
-  //   }
-
-  //   drawProductRow(pdf, row, index, MARGIN_LEFT, currentY, columns, index % 2 === 1);
-
-  //   currentY += rowHeight;
-  // });
-
-  // Tüm tabloyu (başlık + header + satırlar) çevreleyen ince dış çerçeve
-  drawRect(
-    pdf,
-    MARGIN_LEFT,
-    tableStartY,
-    tableWidth,
-    currentY - tableStartY,
-    undefined,
-    DARK
-  );
-
-  return currentY + 6;
+  return cardStartY + cardHeight + 6;
 }
 
 // =========================================================
-// ŞARTLAR + TOPLAMLAR
+// ŞARTLAR VE KOŞULLAR
 // =========================================================
 
-function drawConditionsAndTotals(pdf: jsPDF, pf: Proforma, startY: number): number {
-  const { araTotal, total } = calcTotals(pf);
-
-  const effectiveIskonto = pf.iskontoEtkin ? pf.iskonto || 0 : 0;
-
-  const gap = 5;
-  const totalsWidth = 55;
-  const conditionsWidth = CONTENT_WIDTH - totalsWidth - gap;
-  const conditionsX = MARGIN_LEFT;
-  const totalsX = MARGIN_LEFT + conditionsWidth + gap;
-  const titleHeight = 8; // 7 -> 8
-
-  // =======================================================
-  // ŞARTLAR
-  // =======================================================
-
+function drawConditions(pdf: jsPDF, pf: Proforma, startY: number): number {
+  const width = CONTENT_WIDTH;
+  const titleHeight = 8;
   const conditions = pf.conditions || [];
   const conditionLines: string[] = [];
 
   for (const condition of conditions) {
-    const lines = splitText(pdf, `• ${condition}`, conditionsWidth - 8);
+    const lines = splitText(pdf, `• ${condition.name}`, width - 8);
     conditionLines.push(...lines);
   }
 
-  const conditionsHeight = Math.max(32, 14 + conditionLines.length * 5.5); // 30/13/5 -> 32/14/5.5
+  const conditionsHeight = Math.max(24, titleHeight + 6 + conditionLines.length * 5.5 + 4);
 
-  drawRoundedRect(pdf, conditionsX, startY, conditionsWidth, conditionsHeight, 1.5, WHITE, BORDER);
-  drawSectionTitle(pdf, "Şartlar ve Koşullar", conditionsX, startY, conditionsWidth, titleHeight);
+  drawCard(pdf, MARGIN_LEFT, startY, width, conditionsHeight, {
+    header: { title: "Şartlar ve Koşullar", height: titleHeight },
+  });
 
-  let conditionY = startY + 14; // 13 -> 14
+  let conditionY = startY + titleHeight + 6;
 
-  pdf.setFont("Poppins", "normal");
-  pdf.setFontSize(8.3); // 7.5 -> 8.3
-  pdf.setTextColor(...DARK);
+  pdf.setFont(FONT, "normal");
+  pdf.setFontSize(8.3);
+  pdf.setTextColor(...INK);
 
   for (const line of conditionLines) {
-    pdf.text(line, conditionsX + 4, conditionY);
-    conditionY += 5.5; // 5 -> 5.5
+    pdf.text(line, MARGIN_LEFT + 4, conditionY);
+    conditionY += 5.5;
   }
 
-  // =======================================================
-  // TOPLAMLAR
-  // =======================================================
+  return startY + conditionsHeight + 6;
+}
+
+// =========================================================
+// ÖDEME BİLGİLERİ (3/4) + TOPLAMLAR (1/4) (YAN YANA)
+// =========================================================
+
+function drawPaymentAndTotals(pdf: jsPDF, pf: Proforma, startY: number): number {
+  const { araTotal, total } = calcTotals(pf);
+  const effectiveIskonto = pf.discount !== 0 ? pf.discount || 0 : 0;
+
+  const gap = 5;
+
+  // 4/3 ödeme bilgileri (%75), 4/1 toplamlar (%25)
+  const paymentWidth = (CONTENT_WIDTH - gap) * 0.75;
+  const totalsWidth = (CONTENT_WIDTH - gap) * 0.25;
+
+  const paymentX = MARGIN_LEFT;
+  const totalsX = MARGIN_LEFT + paymentWidth + gap;
+
+  const titleHeight = 8;
+  const rowHeight = 10.5;
+  const labelColWidth = 26;
+
+  // Ortak kart yüksekliği
+  const cardHeight = titleHeight + rowHeight * 3 + 4;
+
+  // ---------------------------------------------------------
+  // 1. SOL KART: ÖDEME BİLGİLERİ (3/4)
+  // ---------------------------------------------------------
+  drawCard(pdf, paymentX, startY, paymentWidth, cardHeight, {
+    header: { title: "Ödeme Bilgileri", height: titleHeight },
+  });
+
+  const paymentRows: [string, string][] = [
+    ["UNVAN", "sample-payment-unvan"],
+    ["BANKA", "sample-payment-banka"],
+    ["IBAN", "sample-payment-iban"],
+  ];
+
+  let rowY = startY + titleHeight + 7;
+
+  paymentRows.forEach(([label, value], index) => {
+    setText(pdf, label, paymentX + 4, rowY, 7.6, true, TEXT_SECONDARY);
+    setText(pdf, value, paymentX + labelColWidth, rowY, 8.4, false, INK);
+
+    if (index < paymentRows.length - 1) {
+      drawLine(
+        pdf,
+        paymentX + 4,
+        rowY + rowHeight / 2 - 1,
+        paymentX + paymentWidth - 4,
+        rowY + rowHeight / 2 - 1,
+        DIVIDER,
+        0.25
+      );
+    }
+
+    rowY += rowHeight;
+  });
+
+  // ---------------------------------------------------------
+  // 2. SAĞ KART: TOPLAMLAR (1/4)
+  // ---------------------------------------------------------
+  drawCard(pdf, totalsX, startY, totalsWidth, cardHeight, { elevated: true });
 
   const rows = [
     ["Ara Total", tl(araTotal)],
     ["İskonto", `%${effectiveIskonto}`],
     ["Total", tl(total)],
-  ];
+  ] as const;
 
-  let totalY = startY;
+  let totalY = startY + 6;
+  const totalRowHeight = (cardHeight - 10) / 3;
 
   rows.forEach(([label, value], index) => {
-    const height = index === 2 ? 14 : 11; // 13/10 -> 14/11
+    const isTotal = label === "Total";
+    const pillX = totalsX + 4;
+    const pillWidth = totalsWidth - 8;
 
-    // Label
-    pdf.setFillColor(...ORANGE);
-    pdf.rect(totalsX, totalY, 26, height, "F");
-
-    pdf.setDrawColor(...DARK);
-    pdf.rect(totalsX, totalY, 26, height, "S");
-
-    pdf.setFont("Poppins", "bold");
-    pdf.setFontSize(index === 2 ? 7.8 : 7); // 7/6.2 -> 7.8/7
-
-    pdf.setTextColor(...WHITE);
-
-    pdf.text(label.toUpperCase(), totalsX + 2.5, totalY + height / 2 + 2);
-
-    // Value
-    pdf.setFillColor(...WHITE);
-    pdf.rect(totalsX + 26, totalY, totalsWidth - 26, height, "F");
-
-    pdf.setDrawColor(...DARK);
-    pdf.rect(totalsX + 26, totalY, totalsWidth - 26, height, "S");
+    // Etiket ve değer yazdır (Turuncu BG tamamen kaldırıldı, Siyah text kullanılıyor)
+    setText(
+      pdf,
+      label.toUpperCase(),
+      pillX,
+      totalY + totalRowHeight / 2 + 1,
+      isTotal ? 7.8 : 7.3,
+      true,
+      isTotal ? INK : TEXT_SECONDARY
+    );
 
     drawRightText(
       pdf,
       value,
-      totalsX + totalsWidth - 3,
-      totalY + height / 2 + 2,
-      index === 2 ? 10 : 8, // 9/7 -> 10/8
-      index === 2
+      pillX + pillWidth,
+      totalY + totalRowHeight / 2 + 1,
+      isTotal ? 9 : 8.6,
+      isTotal,
+      INK
     );
 
-    totalY += height;
+    if (index < rows.length - 1) {
+      drawLine(
+        pdf,
+        pillX,
+        totalY + totalRowHeight,
+        pillX + pillWidth,
+        totalY + totalRowHeight,
+        DIVIDER,
+        0.25
+      );
+    }
+
+    totalY += totalRowHeight;
   });
 
-  return startY + Math.max(conditionsHeight, 36) + 6; // 33 -> 36
+  return startY + cardHeight + 8;
 }
 
 // =========================================================
-// ÖDEME BİLGİLERİ
-// =========================================================
-
-function drawPayment(pdf: jsPDF, pf: Proforma, startY: number): number {
-  const x = MARGIN_LEFT;
-  const width = CONTENT_WIDTH;
-  const titleHeight = 8; // 7 -> 8
-  const rowHeight = 11; // 10 -> 11
-  const totalHeight = titleHeight + rowHeight * 2;
-
-  drawRoundedRect(pdf, x, startY, width, totalHeight, 1.5, WHITE, BORDER);
-  drawSectionTitle(pdf, "Ödeme Bilgileri", x, startY, width, titleHeight);
-
-  const firstRowY = startY + titleHeight;
-
-  // -------------------------------------------------------
-  // Kolon genişlikleri
-  // -------------------------------------------------------
-
-  const col1 = 25;
-  const col2 = 65;
-  const col3 = 25;
-  const col4 = width - col1 - col2 - col3;
-
-  // -------------------------------------------------------
-  // UNVAN
-  // -------------------------------------------------------
-
-  drawRect(pdf, x, firstRowY, col1, rowHeight, LIGHT_BG, BORDER);
-  setText(pdf, "UNVAN", x + 3, firstRowY + 7, 7.3, true); // 6.5/6.5 -> 7/7.3
-
-  drawRect(pdf, x + col1, firstRowY, col2, rowHeight, WHITE, BORDER);
-  setText(pdf,"sample-payment-unvan", x + col1 + 3, firstRowY + 7, 7.8); // 7 -> 7.8
-
-  // -------------------------------------------------------
-  // BANKA
-  // -------------------------------------------------------
-
-  drawRect(pdf, x + col1 + col2, firstRowY, col3, rowHeight, LIGHT_BG, BORDER);
-  setText(pdf, "BANKA", x + col1 + col2 + 3, firstRowY + 7, 7.3, true); // 6.5 -> 7.3
-
-  drawRect(pdf, x + col1 + col2 + col3, firstRowY, col4, rowHeight, WHITE, BORDER);
-  setText(
-    pdf,
-    "sample-payment-banka",
-    x + col1 + col2 + col3 + 3,
-    firstRowY + 7,
-    7.8 // 7 -> 7.8
-  );
-
-  // -------------------------------------------------------
-  // IBAN
-  // -------------------------------------------------------
-
-  const ibanY = firstRowY + rowHeight;
-
-  drawRect(pdf, x, ibanY, col1, rowHeight, LIGHT_BG, BORDER);
-  setText(pdf, "IBAN", x + 3, ibanY + 7, 7.3, true); // 6.5 -> 7.3
-
-  drawRect(pdf, x + col1, ibanY, width - col1, rowHeight, WHITE, BORDER);
-  setText(pdf, "sample-payment-iban", x + col1 + 3, ibanY + 7, 7.8); // 7 -> 7.8
-
-  return startY + totalHeight + 8;
-}
-
-// =========================================================
-// FOOTER
+// FOOTER — her sayfanın altında sabit dipnot
 // =========================================================
 
 function drawFooter(pdf: jsPDF, pf: Proforma) {
@@ -956,11 +793,11 @@ function drawFooter(pdf: jsPDF, pf: Proforma) {
 
     const y = PAGE_HEIGHT - 7;
 
-    drawLine(pdf, MARGIN_LEFT, y - 4, PAGE_WIDTH - MARGIN_RIGHT, y - 4, BORDER, 0.3);
+    drawLine(pdf, MARGIN_LEFT, y - 4, PAGE_WIDTH - MARGIN_RIGHT, y - 4, DIVIDER, 0.3);
 
-    pdf.setFont("Poppins", "normal");
-    pdf.setFontSize(6); // 5.5 -> 6
-    pdf.setTextColor(...GRAY_TEXT);
+    pdf.setFont(FONT, "normal");
+    pdf.setFontSize(6);
+    pdf.setTextColor(...TEXT_SECONDARY);
 
     pdf.text(
       "Teklifimizi bilginize sunar, iş birliğimizin verimli ve uzun soluklu olmasını temenni ederiz.",
@@ -991,13 +828,10 @@ async function createProformaPdf(pf: Proforma): Promise<jsPDF> {
     putOnlyUsedFonts: true,
   });
 
-  // Fontları ekle
   await registerFonts(pdf);
 
-  // İletişim ikonlarını yükle (telefon, whatsapp, maps)
   const icons = await registerIcons();
 
-  // PDF metadata
   pdf.setProperties({
     title: `Proforma-${safeString(pf.id)}`,
     subject: "Proforma",
@@ -1006,15 +840,10 @@ async function createProformaPdf(pf: Proforma): Promise<jsPDF> {
     keywords: "proforma, teklif, fatura",
   });
 
-  // =======================================================
-  // SAYFAYI OLUŞTUR
-  // =======================================================
-
   let y = drawHeader(pdf, pf);
 
-  // İletişim ikonları — FİRMA satırının hemen ÜSTÜNDE, ayrı bir satırda
-  const contactIconSize = 8; // mm, ikon boyutu (küçültüldü)
-  const contactIconAreaHeight = contactIconSize + 6; // FİRMA satırına daha fazla boşluk
+  const contactIconSize = 8;
+  const contactIconAreaHeight = contactIconSize + 6;
 
   drawContactIcons(
     pdf,
@@ -1027,37 +856,23 @@ async function createProformaPdf(pf: Proforma): Promise<jsPDF> {
 
   y += contactIconAreaHeight;
 
-  y = drawSeller(pdf, pf, y);
-
-  y = drawBuyerAndContact(pdf, pf, y);
+  y = drawBuyerAndSeller(pdf, pf, y);
 
   y = drawProductTable(pdf, pf, y);
-
-  // =======================================================
-  // ŞARTLAR + TOPLAMLAR
-  // =======================================================
-
-  if (y + 50 > PAGE_HEIGHT - MARGIN_BOTTOM) {
-    pdf.addPage();
-    y = MARGIN_TOP;
-  }
-
-  y = drawConditionsAndTotals(pdf, pf, y);
-
-  // =======================================================
-  // ÖDEME
-  // =======================================================
 
   if (y + 35 > PAGE_HEIGHT - MARGIN_BOTTOM) {
     pdf.addPage();
     y = MARGIN_TOP;
   }
 
-  drawPayment(pdf, pf, y);
+  y = drawConditions(pdf, pf, y);
 
-  // =======================================================
-  // FOOTER
-  // =======================================================
+  if (y + 40 > PAGE_HEIGHT - MARGIN_BOTTOM) {
+    pdf.addPage();
+    y = MARGIN_TOP;
+  }
+
+  drawPaymentAndTotals(pdf, pf, y);
 
   drawFooter(pdf, pf);
 
@@ -1068,7 +883,7 @@ async function createProformaPdf(pf: Proforma): Promise<jsPDF> {
 // DOWNLOAD
 // =========================================================
 
-export async function downloadProformaPdf(pf: Proforma): Promise<void> {
+export async function downloadProformaPdf(pf: Proforma, session: Session): Promise<void> {
   const pdf = await createProformaPdf(pf);
 
   const blob = pdf.output("blob");

@@ -54,7 +54,7 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
   const [pwErr, setPwErr] = useState("");
 
   const [users, setUsers] = useState<UsersMap>({});
-  const [newUser, setNewUser] = useState({ username: "", password: "", name: "", firma: "", role: "firma" as UserRole });
+  const [newUser, setNewUser] = useState({ username: "", password: "", name: "", firm: "", role: "firma" as UserRole });
   const [userMsg, setUserMsg] = useState("");
 
   useEffect(() => {
@@ -67,7 +67,7 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
     if (!current) return;
     // const updated: UsersMap = { ...usersMap, [session.username]: { ...current, fullname: name, email } };
     // await storeSet("users", updated);
-    onSessionUpdate({ ...session, seller_email:email });
+    onSessionUpdate({ ...session, seller_email: email });
     setProfileMsg("Profil güncellendi.");
     setTimeout(() => setProfileMsg(""), 2500);
   };
@@ -116,7 +116,10 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
 
   const addUser = async () => {
     setUserMsg("");
-    if (!newUser.username || !newUser.password || !newUser.firma) { setUserMsg("Kullanıcı adı, şifre ve firma zorunludur."); return; }
+    if (!newUser.username || !newUser.password || !newUser.firm) {
+      setUserMsg("Kullanıcı adı, şifre ve firma zorunludur.");
+      return;
+    }
     const usersMap = await storeGet<UsersMap>("users", {});
     if (usersMap[newUser.username]) { setUserMsg("Bu kullanıcı adı zaten var."); return; }
     // const updated: UsersMap = {
@@ -125,7 +128,7 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
     // };
     // await storeSet("users", updated);
     await storeSet(`proformas:${newUser.username}`, []);
-    setNewUser({ username: "", password: "", name: "", firma: "", role: "firma" });
+    setNewUser({ username: "", password: "", name: "", firm: "", role: "firma" });
     await refreshUsers();
   };
 
@@ -237,7 +240,7 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
                   <Grid item xs={12} sm={6}><TextField label="Kullanıcı Adı" fullWidth value={newUser.username} onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} /></Grid>
                   <Grid item xs={12} sm={6}><TextField label="Şifre" fullWidth value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} /></Grid>
                   <Grid item xs={12} sm={6}><TextField label="Ad Soyad" fullWidth value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} /></Grid>
-                  <Grid item xs={12} sm={6}><TextField label="Firma" fullWidth value={newUser.firma} onChange={(e) => setNewUser({ ...newUser, firma: e.target.value })} /></Grid>
+                  <Grid item xs={12} sm={6}><TextField label="Firma" fullWidth value={newUser.firm} onChange={(e) => setNewUser({ ...newUser, firm: e.target.value })} /></Grid>
                   <Grid item xs={12} sm={6}>
                     <Select fullWidth value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value as UserRole })}>
                       <MenuItem value="firma">Firma</MenuItem>
