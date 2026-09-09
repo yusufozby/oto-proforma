@@ -75,7 +75,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   }, [proformas, query]);
   console.log(filtered);
   const handleDownload = async (p: Proforma) => {
-    setDownloadingId(p.id);
+    setDownloadingId(p.id!);
     try {
       await downloadProformaPdf(p, session);
     } finally {
@@ -393,7 +393,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                         <IconButton size="small" onClick={() => shareProformaPdf(p)} title="Paylaş">
                           <ShareIcon fontSize="small" color="primary" />
                         </IconButton>
-                        <IconButton size="small" onClick={() => handleDelete(p.id)} title="Sil">
+                        <IconButton size="small" onClick={() => handleDelete(p.id!)} title="Sil">
                           <DeleteOutlineIcon fontSize="small" color="error" />
                         </IconButton>
                       </TableCell>

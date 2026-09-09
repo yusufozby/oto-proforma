@@ -54,6 +54,7 @@ const COLUMNS: ColumnDef[] = [
   { key: "totalPrice", label: "Toplam ₺", align: "right", defaultOpen: true, mono: true, editable: false },
 ];
 
+
 const FIELD_BY_COLUMN: Partial<
   Record<ColumnKey, keyof Product | "totalNumber" | "totalPrice">
 > = {
@@ -78,25 +79,7 @@ function initialColumnState(): Record<ColumnKey, boolean> {
  * Proforma tipinizde başka zorunlu alanlar varsa buraya ekleyin —
  * burada yalnızca bu dosyada kullanılan alanlar dolduruldu.
  */
-function createBlankProforma(): Proforma {
-  return {
-    tarih: "",
-    gecerlilik: "",
-    buyer_name: "",
-    province: "",
-    address: "",
-    phone: "",
-    buyer_email: "",
-    interlocuter_name: "",
-    interlocuter_phone: "",
-    pay_title: "",
-    bank: "",
-    iban: "",
-    discount: 0,
-    conditions: [],
-    products: [],
-  } as unknown as Proforma;
-}
+
 
 export default function ProformaEditor({ session, isEdit }: ProformaEditorProps) {
   const navigate = useNavigate();
@@ -114,7 +97,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
   const [dragOver, setDragOver] = useState(false);
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: "success" | "error" }>({ open: false, message: "", severity: "success" });
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  console.log(pf);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -143,7 +126,12 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
         }
       } else {
         // Yeni proforma: sunucudan bir şey çekmeye gerek yok, boş taslakla başla
-        if (!cancelled) setPf(createBlankProforma());
+        if (!cancelled) setPf({
+          conditions: [],
+          discount: 0,
+          products: [],
+          user_id: session.role === "admin" ? 1 : 2
+        });
       }
     })();
     return () => { cancelled = true; };
@@ -170,7 +158,20 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
   const hideColumn = (key: ColumnKey) => setColOpen((s) => ({ ...s, [key]: false }));
   const showColumn = (key: ColumnKey) => setColOpen((s) => ({ ...s, [key]: true }));
 
-  const addBlankProduct = () => updatePf((p) => ({ ...p, products: [...p.products] }));
+  const addBlankProduct = () => updatePf((p) => ({
+    ...p, products: [...p.products, {
+      code: '',
+      DynamicValues: [],
+      name: '',
+      gtype: '',
+      parcel: 0,
+      parcel_inside: 0,
+      unit: 0,
+      Id: 1,
+      proforma_id: pf?.id,
+
+    }]
+  }));
   const removeProduct = (id: number) => updatePf((p) => ({ ...p, products: p.products.filter((r) => r.Id !== id) }));
   const updateProductField = (id: number, field: keyof Product, value: string) =>
     updatePf((p) => ({ ...p, products: p.products.map((r) => (r.Id === id ? { ...r, [field]: value as any } : r)) }));
@@ -223,9 +224,17 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
     if (file) await processExcelFile(file);
   };
 
-  const addCondition = () => updatePf((p) => ({ ...p, conditions: [...p.conditions] }));
+  const addCondition = () => updatePf((p) => ({ ...p, conditions: [...p.conditions, { name: '', proforma_id: pf?.id }] }));
   const updateCondition = (i: number, value: string) =>
-    updatePf((p) => ({ ...p }));
+    updatePf((p) => ({
+      ...p, conditions: p.conditions.map((c, index) => {
+        if (index === i) {
+          c.name = value;
+
+        }
+        return c
+      })
+    }));
   const removeCondition = (i: number) => updatePf((p) => ({ ...p, conditions: p.conditions.filter((_, idx) => idx !== i) }));
 
   const readOnlyValue = (r: Product, key: ColumnKey): string => {
@@ -247,8 +256,8 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
     setSaving(true);
     try {
       const url = isEdit
-        ? `${baseApi}/api/proforma/update/${id}`
-        : `${baseApi}/api/proforma/create`;
+        ? `${baseApi}/api/proforma/edit/${id}`
+        : `${baseApi}/api/proforma/add`;
 
       const response = await fetch(url, {
         method: isEdit ? "PUT" : "POST",
@@ -303,12 +312,12 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
             <Grid item xs={12} sm={6}>
               <TextField type="date" label="Tarih" fullWidth size="small"
                 value={pf.created_date}
-                onChange={(e) => update(["tarih"], e.target.value)} InputLabelProps={{ shrink: true }} />
+                onChange={(e) => update(["created_date"], e.target.value)} InputLabelProps={{ shrink: true }} />
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField type="date" label="Geçerlilik" fullWidth size="small"
-                value={pf}
-                onChange={(e) => update(["gecerlilik"], e.target.value)} InputLabelProps={{ shrink: true }} />
+                value={pf.validity_date}
+                onChange={(e) => update(["validity_date"], e.target.value)} InputLabelProps={{ shrink: true }} />
             </Grid>
           </Grid>
         </Paper>
@@ -548,7 +557,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
               {pf.conditions.map((c, i) => (
                 <Stack key={i} direction="row" spacing={1} alignItems="center">
                   <Typography variant="body2" className="mono" color="text.secondary" sx={{ width: 20 }}>{i + 1}.</Typography>
-                  <TextField fullWidth size="small" value={c.name} onChange={(e) => updateCondition(i, e.target.value)} />
+                  <TextField fullWidth size="small" onChange={(e) => updateCondition(i, e.target.value)} />
                   <IconButton size="small" onClick={() => removeCondition(i)}><CloseIcon fontSize="small" color="error" /></IconButton>
                 </Stack>
               ))}

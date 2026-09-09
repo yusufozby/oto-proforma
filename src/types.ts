@@ -25,7 +25,7 @@ export interface PaymentInfo {
 }
 
 export interface Proforma {
-  id: number;
+  id?: number;
   code?: string;
   user_id: number;
   created_date?: string;
@@ -78,17 +78,15 @@ export interface Product {
   code: string;
   parcel_inside?: number;
   unit?: number;
-  proforma_id: number;
-  Proforma: Proforma;
+  proforma_id?: number;
   DynamicValues: DynamicValue[];
 }
 
 
 export interface Condition {
-  Id: number;
+  Id?: number;
   name: string;
-  proforma_id: number;
-  Proforma: Proforma;
+  proforma_id?: number;
 }
 
 export interface DynamicValue {
