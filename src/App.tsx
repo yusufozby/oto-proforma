@@ -83,7 +83,7 @@ export default function App() {
 
           <Route
             path="/proforma/add"
-            element={session && session.role === "admin" ?
+            element={session && session.can_add_proforma ?
               <ProformaEditor isEdit={false} session={session} />
 
               : session ? <Navigate to={'/dashboard'} /> : <Navigate to="/login" replace />}

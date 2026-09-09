@@ -152,6 +152,7 @@ export interface Session {
   center_address?: string;
   fabric_address?: string;
   seller_email?: string;
+  can_add_proforma: boolean;
 
 }
 

@@ -11,6 +11,7 @@ import PersonIcon from "@mui/icons-material/Person";
 import BusinessIcon from "@mui/icons-material/Business";
 import KeyIcon from "@mui/icons-material/VpnKey";
 import GroupIcon from "@mui/icons-material/Group";
+import LinkIcon from "@mui/icons-material/Link";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
@@ -25,7 +26,7 @@ interface AccountSettingsProps {
   onSessionUpdate: (s: Session) => void;
 }
 
-type TabKey = "profile" | "seller" | "password" | "users";
+type TabKey = "profile" | "seller" | "links" | "password" | "users";
 
 export default function AccountSettings({ session, onSessionUpdate }: AccountSettingsProps) {
   const navigate = useNavigate();
@@ -35,16 +36,17 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
   const TABS: { key: TabKey; label: string; icon: React.ReactElement }[] = [
     { key: "profile", label: "Profil", icon: <PersonIcon fontSize="small" /> },
     { key: "seller", label: "Satıcı Bilgileri", icon: <BusinessIcon fontSize="small" /> },
+    { key: "links", label: "Bağlantılar", icon: <LinkIcon fontSize="small" /> },
     { key: "password", label: "Şifre", icon: <KeyIcon fontSize="small" /> },
     ...(isAdmin ? [{ key: "users" as TabKey, label: "Kullanıcılar", icon: <GroupIcon fontSize="small" /> }] : []),
   ];
-
 
   const [email, setEmail] = useState(session.email || "");
   const [profileMsg, setProfileMsg] = useState("");
 
   const [seller, setSeller] = useState<Session>(session);
   const [sellerMsg, setSellerMsg] = useState("");
+  const [linksMsg, setLinksMsg] = useState("");
 
   const [oldPw, setOldPw] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -65,8 +67,6 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
     const usersMap = await storeGet<UsersMap>("users", {});
     const current = usersMap[session.username];
     if (!current) return;
-    // const updated: UsersMap = { ...usersMap, [session.username]: { ...current, fullname: name, email } };
-    // await storeSet("users", updated);
     onSessionUpdate({ ...session, seller_email: email });
     setProfileMsg("Profil güncellendi.");
     setTimeout(() => setProfileMsg(""), 2500);
@@ -76,11 +76,18 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
     const usersMap = await storeGet<UsersMap>("users", {});
     const current = usersMap[session.username];
     if (!current) return;
-    // const updated: UsersMap = { ...usersMap, [session.username]: { ...current, seller } };
-    // await storeSet("users", updated);
-    onSessionUpdate({ ...session });
+    onSessionUpdate({ ...seller });
     setSellerMsg("Satıcı bilgileri güncellendi. Yeni oluşturulan proformalarda otomatik kullanılacak.");
     setTimeout(() => setSellerMsg(""), 3500);
+  };
+
+  const saveLinks = async () => {
+    const usersMap = await storeGet<UsersMap>("users", {});
+    const current = usersMap[session.username];
+    if (!current) return;
+    onSessionUpdate({ ...seller });
+    setLinksMsg("Bağlantı bilgileri başarıyla güncellendi.");
+    setTimeout(() => setLinksMsg(""), 3500);
   };
 
   const changePassword = async () => {
@@ -122,11 +129,6 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
     }
     const usersMap = await storeGet<UsersMap>("users", {});
     if (usersMap[newUser.username]) { setUserMsg("Bu kullanıcı adı zaten var."); return; }
-    // const updated: UsersMap = {
-    //   ...usersMap,
-    //   [newUser.username]: { password: newUser.password, fullname: newUser.name || newUser.username, role: newUser.role },
-    // };
-    // await storeSet("users", updated);
     await storeSet(`proformas:${newUser.username}`, []);
     setNewUser({ username: "", password: "", name: "", firm: "", role: "firma" });
     await refreshUsers();
@@ -150,7 +152,6 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
         <Paper variant="outlined" sx={{ p: 3 }}>
           {tab === "profile" && (
             <Stack spacing={2.5} sx={{ maxWidth: 420 }}>
-
               <TextField label="E-mail" fullWidth value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ornek@firma.com" />
               {profileMsg && <Alert severity="success">{profileMsg}</Alert>}
               <Box><Button variant="contained" startIcon={<SaveIcon />} onClick={saveProfile}>Kaydet</Button></Box>
@@ -160,13 +161,24 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
           {tab === "seller" && (
             <Stack spacing={2.5} sx={{ maxWidth: 480 }}>
               <Typography variant="caption" color="text.secondary">Bu bilgiler her yeni proformada satıcı olarak otomatik kullanılır.</Typography>
-              <TextField label="Firma" fullWidth value={seller.firm} onChange={(e) => setSeller({ ...seller, firm: e.target.value })} />
-              <TextField label="Merkez Adres" fullWidth value={seller.center_address} onChange={(e) => setSeller({ ...seller, center_address: e.target.value })} />
-              <TextField label="Fabrika Adres" fullWidth value={seller.fabric_address} onChange={(e) => setSeller({ ...seller, fabric_address: e.target.value })} />
-              <TextField label="Telefon" fullWidth value={seller.phone} onChange={(e) => setSeller({ ...seller, phone: e.target.value })} />
-              <TextField label="E-mail" fullWidth value={seller.seller_email} onChange={(e) => setSeller({ ...seller, seller_email: e.target.value })} />
+              <TextField label="Firma" fullWidth value={seller.firm || ""} onChange={(e) => setSeller({ ...seller, firm: e.target.value })} />
+              <TextField label="Merkez Adres" fullWidth value={seller.center_address || ""} onChange={(e) => setSeller({ ...seller, center_address: e.target.value })} />
+              <TextField label="Fabrika Adres" fullWidth value={seller.fabric_address || ""} onChange={(e) => setSeller({ ...seller, fabric_address: e.target.value })} />
+              <TextField label="Telefon" fullWidth value={seller.phone || ""} onChange={(e) => setSeller({ ...seller, phone: e.target.value })} />
+              <TextField label="E-mail" fullWidth value={seller.seller_email || ""} onChange={(e) => setSeller({ ...seller, seller_email: e.target.value })} />
               {sellerMsg && <Alert severity="success">{sellerMsg}</Alert>}
               <Box><Button variant="contained" startIcon={<SaveIcon />} onClick={saveSeller}>Kaydet</Button></Box>
+            </Stack>
+          )}
+
+          {tab === "links" && (
+            <Stack spacing={2.5} sx={{ maxWidth: 480 }}>
+              <Typography variant="caption" color="text.secondary">İletişim ve konum bağlantı bilgilerinizi buradan yönetebilirsiniz.</Typography>
+              <TextField label="GSM" fullWidth value={(seller as any).gsm || ""} onChange={(e) => setSeller({ ...seller, gsm: e.target.value } as any)} placeholder="+90 5XX XXX XX XX" />
+              <TextField label="Google Maps Linki" fullWidth value={(seller as any).maps_link || ""} onChange={(e) => setSeller({ ...seller, maps_link: e.target.value } as any)} placeholder="https://maps.google.com/..." />
+              <TextField label="Website Linki" fullWidth value={(seller as any).website_link || ""} onChange={(e) => setSeller({ ...seller, website_link: e.target.value } as any)} placeholder="https://www.ornek.com" />
+              {linksMsg && <Alert severity="success">{linksMsg}</Alert>}
+              <Box><Button variant="contained" startIcon={<SaveIcon />} onClick={saveLinks}>Kaydet</Button></Box>
             </Stack>
           )}
 

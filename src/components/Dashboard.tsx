@@ -4,8 +4,8 @@ import {
   AppBar, Toolbar, Box, Typography, IconButton, Button, TextField, InputAdornment,
   Container, Card, Chip, Alert, Stack, CircularProgress,
   Table, TableHead, TableBody, TableRow, TableCell, TableContainer, Paper,
-  Avatar,
-  Divider,
+  Avatar, Divider,
+  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions
 } from "@mui/material";
 import EventAvailableIcon from "@mui/icons-material/EventAvailable";
 import EventNoteIcon from "@mui/icons-material/EventNote";
@@ -41,25 +41,30 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   const showTripleSuggestion = detectTripleTrigger(query);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
-  // Proforma listesi App.tsx'ten gelmiyor — Dashboard kendi verisini kendisi yükler.
-  // Her mount'ta (ör. /proforma/add'den geri dönünce) taze veri çekilmiş olur.
+  // Silme Onay Modalı İçin State'ler
+  const [deleteTarget, setDeleteTarget] = useState<Proforma | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   useEffect(() => {
     (async () => {
-      const response = await fetch(`${baseApi}/api/Proforma/get`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${session.token}`,
-          'Content-Type': 'application/json'
-        }
-      })
+      try {
+        const response = await fetch(`${baseApi}/api/Proforma/get`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.token}`,
+            'Content-Type': 'application/json'
+          }
+        });
 
-      const json = await response.json();
-      console.log("json", json)
-      console.log(json);
-      setProformas(json);
-      setLoading(false);
+        const json = await response.json();
+        setProformas(json);
+      } catch (error) {
+        console.error("Proformalar yüklenirken hata oluştu:", error);
+      } finally {
+        setLoading(false);
+      }
     })();
-  }, [session.username]);
+  }, [session.username, session.token]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -73,7 +78,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       return inBuyer || inId || inProducts;
     });
   }, [proformas, query]);
-  console.log(filtered);
+
   const handleDownload = async (p: Proforma) => {
     setDownloadingId(p.id!);
     try {
@@ -83,12 +88,35 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }
   };
 
+  // Modaldaki Sil butonuna basılınca çalışır
+  const confirmDelete = async () => {
+    if (!deleteTarget || !deleteTarget.id) return;
 
-  const handleDelete = async (id: number) => {
-    const next = proformas.filter((p) => p.id !== id);
-    setProformas(next);
-    await storeSet(`proformas:${session.username}`, next);
+    setDeleting(true);
+    try {
+      const response = await fetch(`${baseApi}/api/proforma/delete/${deleteTarget.id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${session.token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const next = proformas.filter((p) => p.id !== deleteTarget.id);
+        setProformas(next);
+        await storeSet(`proformas:${session.username}`, next);
+      } else {
+        console.error("Silme başarısız oldu.");
+      }
+    } catch (error) {
+      console.error("Silme hatası:", error);
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
   };
+
   return (
     <Box sx={{ minHeight: 600 }}>
       <AppBar
@@ -155,7 +183,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
             display: 'flex',
             alignItems: 'center',
             gap: 2,
-
             px: 2,
             py: 0.75,
             borderRadius: 3,
@@ -188,7 +215,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
             <Box sx={{ minWidth: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-
                 <Typography variant="body2" fontWeight={600} noWrap sx={{ maxWidth: 250 }}>
                   {session.firm}
                 </Typography>
@@ -308,9 +334,9 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                 Randevularım
               </Button>
             )}
-            <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={() => navigate("/proforma/add")}>
+            {session.can_add_proforma && <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={() => navigate("/proforma/add")}>
               Yeni Proforma
-            </Button>
+            </Button>}
           </Stack>
         </Stack>
 
@@ -347,12 +373,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           <Card variant="outlined" sx={{ py: 8, textAlign: "center" }}>
             <ChecklistIcon sx={{ fontSize: 32, color: "text.secondary", mb: 1 }} />
             <Typography fontWeight={600}>{proformas.length === 0 ? "Henüz proforma yok" : "Sonuç bulunamadı"}</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {proformas.length === 0 ? "İlk proformanızı oluşturarak başlayın." : "Farklı bir arama deneyin."}
-            </Typography>
-            {proformas.length === 0 && (
-              <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={() => navigate("/proforma/add")}>Yeni Proforma</Button>
-            )}
           </Card>
         ) : (
           <TableContainer component={Paper} variant="outlined" sx={{ overflowX: "auto" }}>
@@ -393,7 +413,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                         <IconButton size="small" onClick={() => shareProformaPdf(p)} title="Paylaş">
                           <ShareIcon fontSize="small" color="primary" />
                         </IconButton>
-                        <IconButton size="small" onClick={() => handleDelete(p.id!)} title="Sil">
+                        <IconButton size="small" onClick={() => setDeleteTarget(p)} title="Sil">
                           <DeleteOutlineIcon fontSize="small" color="error" />
                         </IconButton>
                       </TableCell>
@@ -405,6 +425,35 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           </TableContainer>
         )}
       </Container>
+
+      {/* Silme Onay Modalı */}
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onClose={() => !deleting && setDeleteTarget(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Proforma Silinecek</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            <b>{deleteTarget?.code}</b> kodlu ve <b>{deleteTarget?.buyer_name || "İsimsiz Alıcı"}</b> müşterisine ait proformayı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setDeleteTarget(null)} disabled={deleting} color="inherit">
+            Vazgeç
+          </Button>
+          <Button
+            onClick={confirmDelete}
+            color="error"
+            variant="contained"
+            disabled={deleting}
+            startIcon={deleting ? <CircularProgress size={16} color="inherit" /> : <DeleteOutlineIcon />}
+          >
+            {deleting ? "Siliniyor..." : "Sil"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

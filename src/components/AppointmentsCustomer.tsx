@@ -174,7 +174,7 @@ export default function AppointmentsCustomer({ session, onLogout }: Appointments
             setBusy(false);
         }
     };
-
+    console.log(appointments);
     return (
         <Box sx={{ minHeight: 600 }}>
             <AppBar

@@ -44,7 +44,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   //  1) BadRequest("düz string")            -> data bir string
   //  2) Unauthorized(new { message = "…" })  -> data.message
   //  3) [ApiController] otomatik model hatası -> data.errors / data.title
-   // .NET'ten gelen hata gövdesi birkaç farklı şekilde gelebilir:
+  // .NET'ten gelen hata gövdesi birkaç farklı şekilde gelebilir:
   //  1) BadRequest("mesaj") -> çoğu zaman text/plain, JSON.parse edilemez
   //  2) BadRequest(new { message = "…" }) veya Unauthorized(new {...}) -> JSON obje
   //  3) [ApiController] otomatik model hatası -> ValidationProblemDetails (data.errors)
@@ -71,7 +71,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
       return raw;
     }
   };
-   const submit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     setError("");
@@ -100,7 +100,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         const data = await response.json();
         console.log("Login response data:", data);
 
-        onLogin({ username: username.trim(), token: data.token, firm: data.firm, fullname: data.fullname, role: data.role, userId: data.userId });
+        onLogin({ username: username.trim(), token: data.token, firm: data.firm, fullname: data.fullname, role: data.role, userId: data.userId, can_add_proforma: data.can_add_proforma });
         navigate("/dashboard");
       } else {
         // REGISTER — email, username ve password zorunlu
@@ -146,7 +146,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
       setBusy(false);
     }
   };
-           const formatPhoneTR = (raw: string) => {
+  const formatPhoneTR = (raw: string) => {
     // sadece rakamları al, en fazla 10 hane (başındaki 0 hariç, örn: 5xx xxx xx xx)
     let digits = raw.replace(/\D/g, "");
     if (digits.startsWith("0")) digits = digits.slice(1);
@@ -163,7 +163,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   };
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPhone(formatPhoneTR(e.target.value));
-  
+
   };
   return (
     <Box sx={{ minHeight: 600, width: "100%", display: "flex" }}>
@@ -251,7 +251,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
               {mode === "register" && roleTab === "firma" && (
                 <>
                   <TextField label="E-posta" type="email" value={email} onChange={(e) => setEmail(e.target.value)} fullWidth required placeholder="ornek@firma.com" />
-                                   <TextField
+                  <TextField
                     label="Telefon"
                     value={phone}
                     onChange={handlePhoneChange}
