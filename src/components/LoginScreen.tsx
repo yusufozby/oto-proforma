@@ -100,7 +100,9 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         const data = await response.json();
         console.log("Login response data:", data);
 
-        onLogin({ username: username.trim(), token: data.token, firm: data.firm, fullname: data.fullname, role: data.role, userId: data.userId, can_add_proforma: data.can_add_proforma });
+        onLogin({
+          center_address: data.center_address, fabric_address: data.fabric_address, email: data.email, seller_email: data.seller_email, username: username.trim(), token: data.token, firm: data.firm, fullname: data.fullname, role: data.role, userId: data.userId, can_add_proforma: data.can_add_proforma, phone: data.phone
+        });
         navigate("/dashboard");
       } else {
         // REGISTER — email, username ve password zorunlu

@@ -410,7 +410,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                         <IconButton size="small" onClick={() => navigate(`/proforma/edit/${p.id}`)} title="Düzenle">
                           <EditOutlinedIcon fontSize="small" color="secondary" />
                         </IconButton>
-                        <IconButton size="small" onClick={() => shareProformaPdf(p)} title="Paylaş">
+                        <IconButton size="small" onClick={() => shareProformaPdf(p, session)} title="Paylaş">
                           <ShareIcon fontSize="small" color="primary" />
                         </IconButton>
                         <IconButton size="small" onClick={() => setDeleteTarget(p)} title="Sil">

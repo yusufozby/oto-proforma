@@ -56,6 +56,11 @@ const SHADOW = [232, 232, 232] as const;
 
 const CARD_RADIUS = 2.4;
 
+// Ürün satırı ve görsel boyutu — 100x100'lük önizleme PDF'te bu ölçüde
+// (12x12mm, 16mm'lik kolonun içinde 2mm boşluk payıyla) basılıyor.
+const PRODUCT_ROW_HEIGHT = 16;
+const PRODUCT_IMAGE_SIZE = 12;
+
 // =========================================================
 // GENEL HELPERS
 // =========================================================
@@ -90,6 +95,36 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 // =========================================================
+// FONT DOSYASI DOĞRULAMA
+// =========================================================
+//
+// Bozuk/boş/yanlış bir TTF dosyası VFS'e sessizce yazıldığında jsPDF
+// glyph tablosunu düzgün gömemeyip metnin yerine dolu kutucuklar
+// ("tofu box") basar. Bu kontrol, sorunu sessizce üretime yansıtmak
+// yerine açık bir hata olarak baştan yakalar.
+// =========================================================
+
+function assertValidTtf(buffer: ArrayBuffer, label: string) {
+  if (buffer.byteLength < 1000) {
+    throw new Error(
+      `${label} dosyası çok küçük (${buffer.byteLength} byte) — muhtemelen bozuk veya yanlış dosya kopyalanmış.`
+    );
+  }
+
+  const view = new DataView(buffer);
+  const magic = view.getUint32(0, false);
+
+  // Geçerli TrueType/OpenType imzaları: 0x00010000 (TTF), 'true', 'OTTO' (OTF), 'ttcf' (koleksiyon)
+  const validMagics = [0x00010000, 0x74727565, 0x4f54544f, 0x74746366];
+
+  if (!validMagics.includes(magic)) {
+    throw new Error(
+      `${label} geçerli bir TTF/OTF dosyası değil (magic: 0x${magic.toString(16)}) — dosya muhtemelen bir HTML/hata sayfası ya da bozuk kopya.`
+    );
+  }
+}
+
+// =========================================================
 // FONTLARI PDF'E EKLE (Inter)
 // =========================================================
 
@@ -107,6 +142,9 @@ async function registerFonts(pdf: jsPDF): Promise<void> {
     regularResponse.arrayBuffer(),
     boldResponse.arrayBuffer(),
   ]);
+
+  assertValidTtf(regularBuffer, "Inter-Regular.ttf");
+  assertValidTtf(boldBuffer, "Inter-Bold.ttf");
 
   const regularBase64 = arrayBufferToBase64(regularBuffer);
   const boldBase64 = arrayBufferToBase64(boldBuffer);
@@ -232,19 +270,23 @@ function drawCard(
   opts?: {
     header?: { title: string; height?: number; color?: readonly [number, number, number] };
     elevated?: boolean;
+    fill?: boolean;
   }
 ): number {
   const radius = CARD_RADIUS;
   h = h + 2;
-  // 1. Gölge (Gölgenin de dışarı turunculuk sıçratmaması için kartın arkasında tutulur)
-  if (opts?.elevated !== false) {
+
+  const shouldFill = opts?.fill !== false;
+
+  if (shouldFill && opts?.elevated !== false) {
     pdf.setFillColor(...SHADOW);
     pdf.roundedRect(x + 0.6, y + 0.8, w, h, radius, radius, "F");
   }
 
-  // 2. Beyaz Kart Arka Planı (Tam rounded)
-  pdf.setFillColor(...SURFACE);
-  pdf.roundedRect(x, y, w, h, radius, radius, "F");
+  if (shouldFill) {
+    pdf.setFillColor(...SURFACE);
+    pdf.roundedRect(x, y, w, h, radius, radius, "F");
+  }
 
   let headerHeight = 0;
 
@@ -254,14 +296,10 @@ function drawCard(
 
     pdf.setFillColor(...headerColor);
 
-    // Header yüksekliği kart yüksekliğinden küçükse sadece üst taraf turuncu olsun
     if (h > headerHeight + radius) {
-      // Üstü yuvarlatılmış header
       pdf.roundedRect(x, y, w, headerHeight, radius, radius, "F");
-      // Üst header'ın altındaki yuvarlatmayı kapat, düz yap (sol-sağ alt köşelere taşmayacak şekilde)
       pdf.rect(x, y + radius, w, headerHeight - radius, "F");
     } else {
-      // Eğer kart çok kısa ise turuncu tüm kartı kaplamasın, sadece üst kısmı kaplasın
       pdf.roundedRect(x, y, w, Math.min(headerHeight, h), radius, radius, "F");
     }
 
@@ -271,7 +309,6 @@ function drawCard(
     pdf.text(opts.header.title.toUpperCase(), x + 4, y + headerHeight / 2 + 1.8);
   }
 
-  // 3. Dış Çerçeve (En üste basılır)
   pdf.setDrawColor(...CARD_BORDER);
   pdf.setLineWidth(0.3);
   pdf.roundedRect(x, y, w, h, radius, radius, "S");
@@ -291,7 +328,12 @@ function drawHeader(pdf: jsPDF, pf: Proforma): number {
 
   drawRightText(
     pdf,
-    `Tarih: ${safeString(pf.created_date)}`,
+    `Tarih: ${pf.created_date
+      ? new Date(pf.created_date)
+        .toLocaleString("tr-TR")
+        .replace(",", "")
+      : ""
+    }`,
     PAGE_WIDTH - MARGIN_RIGHT,
     y + 5,
     8.2,
@@ -300,14 +342,27 @@ function drawHeader(pdf: jsPDF, pf: Proforma): number {
 
   drawRightText(
     pdf,
-    `Geçerlilik: ${safeString(pf.validity_date)}`,
+    `Geçerlilik: ${pf.validity_date
+      ? new Date(pf.validity_date)
+        .toLocaleString("tr-TR")
+        .replace(",", "")
+      : ""
+    }`,
     PAGE_WIDTH - MARGIN_RIGHT,
     y + 10,
     8.2,
     true
   );
 
-  drawLine(pdf, x, y + 15, PAGE_WIDTH - MARGIN_RIGHT, y + 15, ORANGE, 1.1);
+  drawLine(
+    pdf,
+    x,
+    y + 15,
+    PAGE_WIDTH - MARGIN_RIGHT,
+    y + 15,
+    ORANGE,
+    1.1
+  );
 
   return y + 21;
 }
@@ -356,10 +411,10 @@ function drawContactIcons(
 }
 
 // =========================================================
-// TEKLİF VERİLEN FİRMA + SATICI BİLGİLERİ
+// TEKLİF VERİLEN FİRMA (alıcı + muhattap) + SATICI BİLGİLERİ
 // =========================================================
 
-function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, startY: number): number {
+function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, session: Session, startY: number): number {
   const gap = 5;
   const boxWidth = (CONTENT_WIDTH - gap) / 2;
   const leftX = MARGIN_LEFT;
@@ -367,20 +422,34 @@ function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, startY: number): number {
   const titleHeight = 8;
   const labelColWidth = 26;
 
+  // Alıcı (firma) + muhattap (kişi) bilgileri tek kartta — Muhattap
+  // ayrı bir kart olarak kaldırılmıştı ama bu alanlar hâlâ editörde
+  // dolduruluyor, o yüzden burada satır olarak geri eklendi.
   const buyerRows = [
-    ["FİRMA", ""],
-    ["ADRES", "sample-adres"],
-    ["İLÇE / İL", "sample-ilce"],
-    ["TELEFON", "sample-telefon"],
-    ["E-MAİL", "sample-email"],
+    ["FİRMA", safeString(pf.buyer_name)],
+    ["ADRES", safeString(pf.address)],
+    ["İLÇE / İL", safeString(pf.province)],
+    ["TELEFON", safeString(pf.phone)],
+    ["E-MAİL", safeString(pf.buyer_email)],
+    ["MUHATTAP", safeString(pf.interlocuter_name)],
+    ["ÜNVAN", safeString(pf.interlocuter_title)],
+    ["M. TELEFON", safeString(pf.interlocuter_phone)],
+    ["M. E-MAİL", safeString(pf.interlocuter_email)],
   ];
 
+  // NOT: Satıcı (kendi firma) bilgilerinin proformaya değil, hesabın
+  // kendisine ait olduğunu varsayarak session'dan okuyoruz — çünkü
+  // downloadProformaPdf zaten bir Session parametresi alıyordu ama hiç
+  // kullanılmıyordu, ve AccountSettings ekranı tam olarak bu alanları
+  // güncelleyip session'a yazıyor. Session tipinizde bu alanlar farklı
+  // adlandırıldıysa (ör. seller_email değil sadece email, ya da
+  // center_address değil merkez_adres gibi) burayı ona göre güncelleyin.
   const sellerRows = [
-    ["FİRMA", "sample-firm"],
-    ["MERKEZ", "sample-merkez"],
-    ["FABRİKA", "sample-fabrika"],
-    ["TELEFON", "sample-telefon"],
-    ["E-MAİL", "sample-email"],
+    ["FİRMA", safeString(session.firm)],
+    ["MERKEZ", safeString(session.center_address)],
+    ["FABRİKA", safeString(session.fabric_address)],
+    ["TELEFON", safeString(session.phone)],
+    ["E-MAİL", safeString(session.seller_email)],
   ];
 
   function calculateHeight(rows: string[][]) {
@@ -398,7 +467,7 @@ function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, startY: number): number {
   const sellerHeight = calculateHeight(sellerRows);
   const boxHeight = Math.max(buyerHeight, sellerHeight);
 
-  // Sol kart — Teklif Verilen Firma (alıcı)
+  // Sol kart — Teklif Verilen Firma (alıcı + muhattap)
   drawCard(pdf, leftX, startY, boxWidth, boxHeight, {
     header: { title: "Teklif Verilen Firma", height: titleHeight },
   });
@@ -435,6 +504,7 @@ function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, startY: number): number {
 
 type ProductColumn = {
   key:
+  | "image"
   | "no"
   | "kod"
   | "isim"
@@ -451,17 +521,18 @@ type ProductColumn = {
 };
 
 function getProductColumns(): ProductColumn[] {
-  // Toplam: 8 + 19 + 41 + 20 + 16 + 18 + 16 + 21 + 27 = 186mm (CONTENT_WIDTH)
+  // Toplam: 16+7+17+36+18+15+16+15+20+26 = 186mm (CONTENT_WIDTH)
   return [
-    { key: "no", title: "No", width: 8, align: "center" },
-    { key: "kod", title: "Kod", width: 19, align: "left" },
-    { key: "isim", title: "İsim", width: 41, align: "left" },
-    { key: "gtip", title: "GTİP", width: 20, align: "center" },
-    { key: "koliSayisi", title: "Koli\nSayısı", width: 16, align: "center" },
-    { key: "koliIciAdet", title: "Koli İçi\nAdet", width: 18, align: "center" },
-    { key: "totalAdet", title: "Total\nAdet", width: 16, align: "center" },
-    { key: "birim", title: "Birim ₺", width: 21, align: "right" },
-    { key: "total", title: "Total ₺", width: 27, align: "right" },
+    { key: "image", title: "Görsel", width: 16, align: "center" },
+    { key: "no", title: "No", width: 7, align: "center" },
+    { key: "kod", title: "Kod", width: 17, align: "left" },
+    { key: "isim", title: "İsim", width: 36, align: "left" },
+    { key: "gtip", title: "GTİP", width: 18, align: "center" },
+    { key: "koliSayisi", title: "Koli\nSayısı", width: 15, align: "center" },
+    { key: "koliIciAdet", title: "Koli İçi\nAdet", width: 16, align: "center" },
+    { key: "totalAdet", title: "Total\nAdet", width: 15, align: "center" },
+    { key: "birim", title: "Birim ₺", width: 20, align: "right" },
+    { key: "total", title: "Total ₺", width: 26, align: "right" },
   ];
 }
 
@@ -508,6 +579,30 @@ function columnTextX(col: ProductColumn, colStartX: number): number {
 }
 
 // =========================================================
+// ÜRÜN GÖRSELİNİ BAS — resim yoksa/okunamıyorsa yer tutucu kare çizer
+// =========================================================
+
+function addProductImage(pdf: jsPDF, image: string | undefined, x: number, y: number, size: number) {
+  if (!image) {
+    pdf.setFillColor(...TABLE_HEADER_BG);
+    pdf.setDrawColor(...DIVIDER);
+    pdf.setLineWidth(0.25);
+    pdf.roundedRect(x, y, size, size, 1, 1, "FD");
+    return;
+  }
+
+  try {
+    const format = image.includes("image/jpeg") || image.includes("image/jpg") ? "JPEG" : "PNG";
+    pdf.addImage(image, format, x, y, size, size);
+  } catch {
+    pdf.setFillColor(...TABLE_HEADER_BG);
+    pdf.setDrawColor(...DIVIDER);
+    pdf.setLineWidth(0.25);
+    pdf.roundedRect(x, y, size, size, 1, 1, "FD");
+  }
+}
+
+// =========================================================
 // TABLO KOLON BAŞLIK SATIRI
 // =========================================================
 
@@ -545,14 +640,13 @@ function drawProductTableHeader(
     currentX += column.width;
   }
 
-  // Taşmayı önlemek için çizgiye x + 1 ile x + tableWidth - 1 marjı verildi
   drawLine(pdf, x + 1, y + headerHeight, x + tableWidth - 1, y + headerHeight, ORANGE_DARK, 0.5);
 
   return headerHeight;
 }
 
 // =========================================================
-// ÜRÜN SATIRI
+// ÜRÜN SATIRI — artık görsel kolonunu da basıyor
 // =========================================================
 
 function drawProductRow(
@@ -562,9 +656,9 @@ function drawProductRow(
   x: number,
   y: number,
   columns: ProductColumn[],
-  alternate: boolean
+  alternate: boolean,
+  rowHeight: number
 ): number {
-  const rowHeight = 11.5;
   const tableWidth = CONTENT_WIDTH;
 
   if (alternate) {
@@ -575,6 +669,15 @@ function drawProductRow(
   let currentX = x;
 
   for (const column of columns) {
+    if (column.key === "image") {
+      const size = PRODUCT_IMAGE_SIZE;
+      const imgX = currentX + (column.width - size) / 2;
+      const imgY = y + (rowHeight - size) / 2;
+      addProductImage(pdf, row.image, imgX, imgY, size);
+      currentX += column.width;
+      continue;
+    }
+
     const value = getProductValue(row, index, column.key);
 
     pdf.setFont(FONT, column.key === "total" ? "bold" : "normal");
@@ -585,11 +688,11 @@ function drawProductRow(
     const visibleLines = lines.slice(0, 2);
     const lineHeight = 4.2;
 
-    const startY =
+    const startYText =
       y + rowHeight / 2 - ((visibleLines.length - 1) * lineHeight) / 2 + 2;
 
     visibleLines.forEach((line, lineIndex) => {
-      const textY = startY + lineIndex * lineHeight;
+      const textY = startYText + lineIndex * lineHeight;
       const textX = columnTextX(column, currentX);
       const align = column.align === "left" ? "left" : column.align;
       pdf.text(line, textX, textY, { align });
@@ -604,30 +707,60 @@ function drawProductRow(
 }
 
 // =========================================================
-// ÜRÜN TABLOSU (Full Width)
+// ÜRÜN TABLOSU — gerçek listeyi basıyor, sayfa taşarsa otomatik
+// yeni sayfaya devam ediyor ("Ürünler (devam)")
 // =========================================================
 
 function drawProductTable(pdf: jsPDF, pf: Proforma, startY: number): number {
   const columns = getProductColumns();
-  const tableWidth = CONTENT_WIDTH; // Sayfaya tam oturt
+  const tableWidth = CONTENT_WIDTH;
   const titleHeight = 8;
+  const rowHeight = PRODUCT_ROW_HEIGHT;
+  const products = pf.products || [];
 
-  const cardStartY = startY + 2;
-  let currentY = cardStartY + titleHeight;
-
-  const headerHeight = drawProductTableHeader(pdf, MARGIN_LEFT, currentY, columns);
+  let chunkStartY = startY + 2;
+  let currentY = chunkStartY + titleHeight;
+  let headerHeight = drawProductTableHeader(pdf, MARGIN_LEFT, currentY, columns);
   currentY += headerHeight;
 
-  pf.products = []; // Gerekirse ürün döngünüzü buraya açabilirsiniz.
+  let isFirstChunk = true;
+  let index = 0;
 
-  const cardHeight = currentY - cardStartY;
+  while (index < products.length) {
+    // Sayfanın sonuna yaklaşıldıysa: mevcut sayfadaki bölümü kartla
+    // kapat, yeni sayfa aç, kolon başlığını tekrar çiz ve devam et.
+    if (currentY + rowHeight > PAGE_HEIGHT - MARGIN_BOTTOM - 15) {
+      const chunkHeight = currentY - chunkStartY;
+      drawCard(pdf, MARGIN_LEFT, chunkStartY, tableWidth, chunkHeight, {
+        header: { title: isFirstChunk ? "Ürünler" : "Ürünler (devam)", height: titleHeight },
+        elevated: false,
+        fill: false,
+      });
 
-  drawCard(pdf, MARGIN_LEFT, cardStartY, tableWidth, cardHeight, {
-    header: { title: "Ürünler", height: titleHeight },
-    elevated: true,
+      pdf.addPage();
+      isFirstChunk = false;
+      chunkStartY = MARGIN_TOP;
+      currentY = chunkStartY + titleHeight;
+      headerHeight = drawProductTableHeader(pdf, MARGIN_LEFT, currentY, columns);
+      currentY += headerHeight;
+      continue;
+    }
+
+    drawProductRow(pdf, products[index], index, MARGIN_LEFT, currentY, columns, index % 2 === 1, rowHeight);
+    currentY += rowHeight;
+    index += 1;
+  }
+
+  // Son (veya tek) bölümü kartla kapat — ürün hiç yoksa da başlık +
+  // kolon başlığından oluşan boş tablo yine kart içinde görünür.
+  const chunkHeight = currentY - chunkStartY;
+  drawCard(pdf, MARGIN_LEFT, chunkStartY, tableWidth, chunkHeight, {
+    header: { title: isFirstChunk ? "Ürünler" : "Ürünler (devam)", height: titleHeight },
+    elevated: false,
+    fill: false,
   });
 
-  return cardStartY + cardHeight + 6;
+  return currentY + 6;
 }
 
 // =========================================================
@@ -666,7 +799,7 @@ function drawConditions(pdf: jsPDF, pf: Proforma, startY: number): number {
 }
 
 // =========================================================
-// ÖDEME BİLGİLERİ (3/4) + TOPLAMLAR (1/4) (YAN YANA)
+// ÖDEME BİLGİLERİ (3/4) + TOPLAMLAR (1/4)
 // =========================================================
 
 function drawPaymentAndTotals(pdf: jsPDF, pf: Proforma, startY: number): number {
@@ -675,7 +808,6 @@ function drawPaymentAndTotals(pdf: jsPDF, pf: Proforma, startY: number): number 
 
   const gap = 5;
 
-  // 4/3 ödeme bilgileri (%75), 4/1 toplamlar (%25)
   const paymentWidth = (CONTENT_WIDTH - gap) * 0.75;
   const totalsWidth = (CONTENT_WIDTH - gap) * 0.25;
 
@@ -686,20 +818,17 @@ function drawPaymentAndTotals(pdf: jsPDF, pf: Proforma, startY: number): number 
   const rowHeight = 10.5;
   const labelColWidth = 26;
 
-  // Ortak kart yüksekliği
   const cardHeight = titleHeight + rowHeight * 3 + 4;
 
-  // ---------------------------------------------------------
-  // 1. SOL KART: ÖDEME BİLGİLERİ (3/4)
-  // ---------------------------------------------------------
+  // SOL KART: ÖDEME BİLGİLERİ — gerçek pf alanları
   drawCard(pdf, paymentX, startY, paymentWidth, cardHeight, {
     header: { title: "Ödeme Bilgileri", height: titleHeight },
   });
 
   const paymentRows: [string, string][] = [
-    ["UNVAN", "sample-payment-unvan"],
-    ["BANKA", "sample-payment-banka"],
-    ["IBAN", "sample-payment-iban"],
+    ["UNVAN", safeString(pf.pay_title)],
+    ["BANKA", safeString(pf.bank)],
+    ["IBAN", safeString(pf.iban)],
   ];
 
   let rowY = startY + titleHeight + 7;
@@ -723,9 +852,7 @@ function drawPaymentAndTotals(pdf: jsPDF, pf: Proforma, startY: number): number 
     rowY += rowHeight;
   });
 
-  // ---------------------------------------------------------
-  // 2. SAĞ KART: TOPLAMLAR (1/4)
-  // ---------------------------------------------------------
+  // SAĞ KART: TOPLAMLAR
   drawCard(pdf, totalsX, startY, totalsWidth, cardHeight, { elevated: true });
 
   const rows = [
@@ -742,7 +869,6 @@ function drawPaymentAndTotals(pdf: jsPDF, pf: Proforma, startY: number): number 
     const pillX = totalsX + 4;
     const pillWidth = totalsWidth - 8;
 
-    // Etiket ve değer yazdır (Turuncu BG tamamen kaldırıldı, Siyah text kullanılıyor)
     setText(
       pdf,
       label.toUpperCase(),
@@ -782,7 +908,7 @@ function drawPaymentAndTotals(pdf: jsPDF, pf: Proforma, startY: number): number 
 }
 
 // =========================================================
-// FOOTER — her sayfanın altında sabit dipnot
+// FOOTER
 // =========================================================
 
 function drawFooter(pdf: jsPDF, pf: Proforma) {
@@ -819,7 +945,7 @@ function drawFooter(pdf: jsPDF, pf: Proforma) {
 // PDF OLUŞTUR
 // =========================================================
 
-async function createProformaPdf(pf: Proforma): Promise<jsPDF> {
+async function createProformaPdf(pf: Proforma, session: Session): Promise<jsPDF> {
   const pdf = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -835,7 +961,7 @@ async function createProformaPdf(pf: Proforma): Promise<jsPDF> {
   pdf.setProperties({
     title: `Proforma-${safeString(pf.id)}`,
     subject: "Proforma",
-    author: "sample",
+    author: safeString(session.firm),
     creator: "Oto Proforma",
     keywords: "proforma, teklif, fatura",
   });
@@ -856,7 +982,7 @@ async function createProformaPdf(pf: Proforma): Promise<jsPDF> {
 
   y += contactIconAreaHeight;
 
-  y = drawBuyerAndSeller(pdf, pf, y);
+  y = drawBuyerAndSeller(pdf, pf, session, y);
 
   y = drawProductTable(pdf, pf, y);
 
@@ -884,7 +1010,7 @@ async function createProformaPdf(pf: Proforma): Promise<jsPDF> {
 // =========================================================
 
 export async function downloadProformaPdf(pf: Proforma, session: Session): Promise<void> {
-  const pdf = await createProformaPdf(pf);
+  const pdf = await createProformaPdf(pf, session);
 
   const blob = pdf.output("blob");
 
@@ -897,8 +1023,8 @@ export async function downloadProformaPdf(pf: Proforma, session: Session): Promi
 // SHARE
 // =========================================================
 
-export async function shareProformaPdf(pf: Proforma): Promise<void> {
-  const pdf = await createProformaPdf(pf);
+export async function shareProformaPdf(pf: Proforma, session: Session): Promise<void> {
+  const pdf = await createProformaPdf(pf, session);
 
   const blob = pdf.output("blob");
 

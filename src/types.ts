@@ -79,6 +79,7 @@ export interface Product {
   parcel_inside?: number;
   unit?: number;
   proforma_id?: number;
+  image?: string;
   DynamicValues: DynamicValue[];
 }
 

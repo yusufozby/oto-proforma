@@ -1,46 +1,89 @@
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
-import type { ProductRow } from "../types";
+import type { Product } from "../types";
 
-/** Excel başlıklarını esnek biçimde ürün alanlarına eşler. */
-const HEADER_MAP: Record<string, keyof ProductRow> = {
-  kod: "kod",
-  code: "kod",
+/**
+ * Excel başlıklarını Product alanlarına eşler.
+ *
+ * Excel'de örneğin:
+ *
+ * Kod              -> code
+ * Ürün Adı         -> name
+ * GTİP             -> gtype
+ * Koli Sayısı      -> parcel
+ * Koli İçi Adet    -> parcel_inside
+ * Birim Fiyat      -> unit
+ */
+const HEADER_MAP: Record<string, keyof Product> = {
+  // Kod
+  kod: "code",
+  code: "code",
 
-  isim: "isim",
-  "i̇sim": "isim",
-  ad: "isim",
-  urun: "isim",
-  "ürün": "isim",
-  "urun adi": "isim",
-  "ürün adı": "isim",
-  name: "isim",
+  // Ürün adı
+  isim: "name",
+  "i̇sim": "name",
+  ad: "name",
+  urun: "name",
+  "ürün": "name",
+  "urun adi": "name",
+  "ürün adı": "name",
+  name: "name",
 
-  gtip: "gtip",
+  // GTİP
+  gtip: "gtype",
+  "g.t.i.p": "gtype",
+  gtype: "gtype",
 
-  "koli sayisi": "koliSayisi",
-  "koli sayısı": "koliSayisi",
-  koli: "koliSayisi",
+  // Koli sayısı
+  "koli sayisi": "parcel",
+  "koli sayısı": "parcel",
+  koli: "parcel",
+  parcel: "parcel",
 
-  "koli ici adet": "koliIciAdet",
-  "koli içi adet": "koliIciAdet",
-  "koli ici": "koliIciAdet",
-  "koli içi": "koliIciAdet",
+  // Koli içi adet
+  "koli ici adet": "parcel_inside",
+  "koli içi adet": "parcel_inside",
+  "koli ici": "parcel_inside",
+  "koli içi": "parcel_inside",
+  "koli içi miktar": "parcel_inside",
+  parcel_inside: "parcel_inside",
 
-  birim: "birim",
-  "birim fiyat": "birim",
-  "birim fiyati": "birim",
-  "birim fiyatı": "birim",
-  "birim ₺": "birim",
-  price: "birim",
-  fiyat: "birim",
+  // Birim fiyat
+  birim: "unit",
+  "birim fiyat": "unit",
+  "birim fiyati": "unit",
+  "birim fiyatı": "unit",
+  "birim ₺": "unit",
+  "birim tl": "unit",
+  price: "unit",
+  fiyat: "unit",
+  unit: "unit",
 };
 
-function normalizeHeader(h: string): string {
-  return h
-    .toString()
+/**
+ * Excel başlığını normalize eder.
+ *
+ * Örneğin:
+ *
+ * " Ürün Adı " -> "ürün adı"
+ * "KOLİ SAYISI" -> "koli sayisi"
+ */
+function normalizeHeader(value: unknown): string {
+  return String(value ?? "")
     .trim()
-    .toLowerCase()
+    .toLocaleLowerCase("tr-TR")
+    .replace(/ı/g, "i")
+    .replace(/İ/g, "i")
+    .replace(/ğ/g, "g")
+    .replace(/Ğ/g, "g")
+    .replace(/ü/g, "u")
+    .replace(/Ü/g, "u")
+    .replace(/ş/g, "s")
+    .replace(/Ş/g, "s")
+    .replace(/ö/g, "o")
+    .replace(/Ö/g, "o")
+    .replace(/ç/g, "c")
+    .replace(/Ç/g, "c")
     .replace(/\s+/g, " ");
 }
 
@@ -52,8 +95,11 @@ export interface ExcelImage {
   path: string;
 }
 
+/**
+ * Excel import sonucu.
+ */
 export interface ExcelImportResult {
-  products: ProductRow[];
+  products: Product[];
   skipped: number;
   images: ExcelImage[];
 }
@@ -61,11 +107,12 @@ export interface ExcelImportResult {
 /**
  * Excel içerisindeki gömülü resimleri çıkarır.
  *
- * .xlsx dosyası ZIP yapısında olduğu için resimler:
+ * .xlsx dosyası ZIP yapısındadır.
+ *
+ * Resimler genellikle:
  *
  * xl/media/image1.png
  * xl/media/image2.jpeg
- * ...
  *
  * şeklinde bulunur.
  */
@@ -89,10 +136,13 @@ async function extractExcelImages(
 
     const blob = await zipFile.async("blob");
 
-    const fileName = path.split("/").pop() ?? "image";
+    const fileName =
+      path.split("/").pop() ?? "image";
 
     const file = new File([blob], fileName, {
-      type: blob.type || getMimeType(fileName),
+      type:
+        blob.type ||
+        getMimeType(fileName),
     });
 
     images.push({
@@ -107,7 +157,9 @@ async function extractExcelImages(
 /**
  * Dosya uzantısına göre MIME type belirler.
  */
-function getMimeType(fileName: string): string {
+function getMimeType(
+  fileName: string
+): string {
   const extension = fileName
     .split(".")
     .pop()
@@ -136,28 +188,79 @@ function getMimeType(fileName: string): string {
 }
 
 /**
+ * Excel içerisindeki sayı değerlerini güvenli şekilde number'a çevirir.
+ *
+ * Örneğin:
+ *
+ * "10"       -> 10
+ * "10,50"    -> 10.50
+ * 25         -> 25
+ * ""         -> fallback
+ */
+function parseNumber(
+  value: unknown,
+  fallback: number
+): number {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return fallback;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value)
+      ? value
+      : fallback;
+  }
+
+  let text = String(value).trim();
+
+  if (!text) {
+    return fallback;
+  }
+
+  // Türkçe sayı formatı:
+  // 1.250,50 -> 1250.50
+  if (
+    text.includes(".") &&
+    text.includes(",")
+  ) {
+    text = text
+      .replace(/\./g, "")
+      .replace(",", ".");
+  } else if (text.includes(",")) {
+    text = text.replace(",", ".");
+  }
+
+  const parsed = Number(text);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : fallback;
+}
+
+/**
  * Yüklenen Excel dosyasının ilk sayfasını okur.
  *
- * Hem:
- * - hücre verilerini
- * - Excel içerisine gömülmüş resimleri
- *
- * birlikte döndürür.
+ * Hücre verileri + gömülü resimler döndürülür.
  */
 export async function parseExcelToProducts(
   file: File
 ): Promise<ExcelImportResult> {
-  const buf = await file.arrayBuffer();
+  const buffer = await file.arrayBuffer();
 
-  // -------------------------
-  // 1. Excel'i oku
-  // -------------------------
+  // =====================================================
+  // 1. EXCEL'İ OKU
+  // =====================================================
 
-  const wb = XLSX.read(buf, {
+  const workbook = XLSX.read(buffer, {
     type: "array",
   });
 
-  const sheetName = wb.SheetNames[0];
+  const sheetName =
+    workbook.SheetNames[0];
 
   if (!sheetName) {
     return {
@@ -167,66 +270,129 @@ export async function parseExcelToProducts(
     };
   }
 
-  const sheet = wb.Sheets[sheetName];
+  const sheet =
+    workbook.Sheets[sheetName];
 
-  // -------------------------
-  // 2. Hücre verilerini oku
-  // -------------------------
+  // =====================================================
+  // 2. SATIRLARI OKU
+  // =====================================================
 
-  const rows: Record<string, unknown>[] =
-    XLSX.utils.sheet_to_json(sheet, {
+  const rows =
+    XLSX.utils.sheet_to_json<
+      Record<string, unknown>
+    >(sheet, {
       defval: "",
+      raw: true,
     });
 
   let skipped = 0;
 
-  const products: ProductRow[] = [];
+  const products: Product[] = [];
+
+  // =====================================================
+  // 3. HER SATIRI PRODUCT'A ÇEVİR
+  // =====================================================
 
   for (const row of rows) {
     const mapped: Partial<
-      Record<keyof ProductRow, unknown>
+      Record<keyof Product, unknown>
     > = {};
 
-    for (const [rawKey, value] of Object.entries(row)) {
-      const key = HEADER_MAP[normalizeHeader(rawKey)];
+    // ---------------------------------------------------
+    // Excel başlıklarını Product alanlarına eşleştir
+    // ---------------------------------------------------
 
-      if (key) {
-        mapped[key] = value;
+    for (const [
+      rawKey,
+      value,
+    ] of Object.entries(row)) {
+      const normalizedKey =
+        normalizeHeader(rawKey);
+
+      const productKey =
+        HEADER_MAP[normalizedKey];
+
+      if (productKey) {
+        mapped[productKey] = value;
       }
     }
 
-    if (!mapped.isim && !mapped.kod) {
+    // ---------------------------------------------------
+    // Ürün tamamen boşsa atla
+    // ---------------------------------------------------
+
+    const code =
+      String(mapped.code ?? "").trim();
+
+    const name =
+      String(mapped.name ?? "").trim();
+
+    if (!code && !name) {
       skipped++;
       continue;
     }
 
-    products.push({
-      id: crypto.randomUUID(),
+    // ---------------------------------------------------
+    // Product oluştur
+    // ---------------------------------------------------
 
-      kod: String(mapped.kod ?? ""),
+    const product: Product = {
+      Id: 0,
 
-      isim: String(mapped.isim ?? ""),
+      code,
 
-      gtip: String(mapped.gtip ?? ""),
+      name,
 
-      koliSayisi:
-        Number(mapped.koliSayisi) || 1,
+      gtype:
+        String(mapped.gtype ?? "").trim(),
 
-      koliIciAdet:
-        Number(mapped.koliIciAdet) || 1,
+      parcel: parseNumber(
+        mapped.parcel,
+        1
+      ),
 
-      birim:
-        Number(mapped.birim) || 0,
-    });
+      parcel_inside: parseNumber(
+        mapped.parcel_inside,
+        1
+      ),
+
+      unit: parseNumber(
+        mapped.unit,
+        0
+      ),
+
+      image:
+        String(mapped.image ?? ""),
+
+      DynamicValues: [],
+
+      proforma_id: undefined,
+    };
+
+    products.push(product);
   }
 
-  // -------------------------
-  // 3. Excel içerisindeki
-  //    resimleri çıkar
-  // -------------------------
+  // =====================================================
+  // 4. EXCEL RESİMLERİNİ ÇIKAR
+  // =====================================================
 
-  const images = await extractExcelImages(buf);
-  console.log("Excel içerisindeki resimler:", images);
+  const images =
+    await extractExcelImages(buffer);
+
+  console.log(
+    "Excel içerisindeki ürünler:",
+    products
+  );
+
+  console.log(
+    "Excel içerisindeki resimler:",
+    images
+  );
+
+  // =====================================================
+  // 5. SONUÇ
+  // =====================================================
+
   return {
     products,
     skipped,
