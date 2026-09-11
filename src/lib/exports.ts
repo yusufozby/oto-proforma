@@ -58,9 +58,11 @@ const CARD_RADIUS = 2.4;
 
 // Ürün satırı ve görsel boyutu — 100x100'lük önizleme PDF'te bu ölçüde
 // (12x12mm, 16mm'lik kolonun içinde 2mm boşluk payıyla) basılıyor.
-const PRODUCT_ROW_HEIGHT = 16;
-const PRODUCT_IMAGE_SIZE = 12;
-
+// Ürün satırı ve görsel boyutu — 100x100'lük önizleme PDF'te bu ölçüde
+// basılıyor. Önceki 16/12mm boyutları tabloyu gereksiz büyütüyordu,
+// küçültüldü.
+const PRODUCT_ROW_HEIGHT = 12;
+const PRODUCT_IMAGE_SIZE = 8;
 // =========================================================
 // GENEL HELPERS
 // =========================================================
@@ -521,18 +523,18 @@ type ProductColumn = {
 };
 
 function getProductColumns(): ProductColumn[] {
-  // Toplam: 16+7+17+36+18+15+16+15+20+26 = 186mm (CONTENT_WIDTH)
+  // Toplam: 12+7+18+38+19+16+17+16+21+22 = 186mm (CONTENT_WIDTH)
   return [
-    { key: "image", title: "Görsel", width: 16, align: "center" },
+    { key: "image", title: "Görsel", width: 12, align: "center" },
     { key: "no", title: "No", width: 7, align: "center" },
-    { key: "kod", title: "Kod", width: 17, align: "left" },
-    { key: "isim", title: "İsim", width: 36, align: "left" },
-    { key: "gtip", title: "GTİP", width: 18, align: "center" },
-    { key: "koliSayisi", title: "Koli\nSayısı", width: 15, align: "center" },
-    { key: "koliIciAdet", title: "Koli İçi\nAdet", width: 16, align: "center" },
-    { key: "totalAdet", title: "Total\nAdet", width: 15, align: "center" },
-    { key: "birim", title: "Birim ₺", width: 20, align: "right" },
-    { key: "total", title: "Total ₺", width: 26, align: "right" },
+    { key: "kod", title: "Kod", width: 18, align: "left" },
+    { key: "isim", title: "İsim", width: 38, align: "left" },
+    { key: "gtip", title: "GTİP", width: 19, align: "center" },
+    { key: "koliSayisi", title: "Koli\nSayısı", width: 16, align: "center" },
+    { key: "koliIciAdet", title: "Koli İçi\nAdet", width: 17, align: "center" },
+    { key: "totalAdet", title: "Total\nAdet", width: 16, align: "center" },
+    { key: "birim", title: "Birim ₺", width: 21, align: "right" },
+    { key: "total", title: "Total ₺", width: 22, align: "right" },
   ];
 }
 
@@ -612,23 +614,23 @@ function drawProductTableHeader(
   y: number,
   columns: ProductColumn[]
 ): number {
-  const headerHeight = 12;
+  const headerHeight = 10;
   const tableWidth = CONTENT_WIDTH;
 
   pdf.setFillColor(...TABLE_HEADER_BG);
   pdf.rect(x, y, tableWidth, headerHeight, "F");
 
   pdf.setFont(FONT, "bold");
-  pdf.setFontSize(7.3);
+  pdf.setFontSize(6.2);
   pdf.setTextColor(...TEXT_SECONDARY);
 
   let currentX = x;
 
   for (const column of columns) {
     const lines = column.title.split("\n");
-    const lineHeight = 4;
+    const lineHeight = 3.2;
     const startLineY =
-      y + headerHeight / 2 - ((lines.length - 1) * lineHeight) / 2 + 2;
+      y + headerHeight / 2 - ((lines.length - 1) * lineHeight) / 2 + 1.6;
 
     lines.forEach((line, index) => {
       const textY = startLineY + index * lineHeight;
@@ -644,7 +646,6 @@ function drawProductTableHeader(
 
   return headerHeight;
 }
-
 // =========================================================
 // ÜRÜN SATIRI — artık görsel kolonunu da basıyor
 // =========================================================
@@ -681,15 +682,15 @@ function drawProductRow(
     const value = getProductValue(row, index, column.key);
 
     pdf.setFont(FONT, column.key === "total" ? "bold" : "normal");
-    pdf.setFontSize(7.8);
+    pdf.setFontSize(6.5);
     pdf.setTextColor(...INK);
 
-    const lines = splitText(pdf, value, column.width - 5);
+    const lines = splitText(pdf, value, column.width - 4);
     const visibleLines = lines.slice(0, 2);
-    const lineHeight = 4.2;
+    const lineHeight = 3.4;
 
     const startYText =
-      y + rowHeight / 2 - ((visibleLines.length - 1) * lineHeight) / 2 + 2;
+      y + rowHeight / 2 - ((visibleLines.length - 1) * lineHeight) / 2 + 1.6;
 
     visibleLines.forEach((line, lineIndex) => {
       const textY = startYText + lineIndex * lineHeight;
@@ -705,7 +706,6 @@ function drawProductRow(
 
   return rowHeight;
 }
-
 // =========================================================
 // ÜRÜN TABLOSU — gerçek listeyi basıyor, sayfa taşarsa otomatik
 // yeni sayfaya devam ediyor ("Ürünler (devam)")
@@ -732,7 +732,7 @@ function drawProductTable(pdf: jsPDF, pf: Proforma, startY: number): number {
     if (currentY + rowHeight > PAGE_HEIGHT - MARGIN_BOTTOM - 15) {
       const chunkHeight = currentY - chunkStartY;
       drawCard(pdf, MARGIN_LEFT, chunkStartY, tableWidth, chunkHeight, {
-        header: { title: isFirstChunk ? "Ürünler" : "Ürünler (devam)", height: titleHeight },
+        header: { title: "Ürünler", height: titleHeight },
         elevated: false,
         fill: false,
       });
@@ -755,7 +755,7 @@ function drawProductTable(pdf: jsPDF, pf: Proforma, startY: number): number {
   // kolon başlığından oluşan boş tablo yine kart içinde görünür.
   const chunkHeight = currentY - chunkStartY;
   drawCard(pdf, MARGIN_LEFT, chunkStartY, tableWidth, chunkHeight, {
-    header: { title: isFirstChunk ? "Ürünler" : "Ürünler (devam)", height: titleHeight },
+    header: { title: "Ürünler", height: titleHeight },
     elevated: false,
     fill: false,
   });

@@ -4,7 +4,7 @@ import {
   AppBar, Toolbar, Box, Typography, IconButton, Button, TextField, InputAdornment,
   Container, Card, Chip, Alert, Stack, CircularProgress,
   Table, TableHead, TableBody, TableRow, TableCell, TableContainer, Paper,
-  Avatar, Divider,
+  Avatar, Divider, Pagination, Select, MenuItem, FormControl,
   Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions
 } from "@mui/material";
 import EventAvailableIcon from "@mui/icons-material/EventAvailable";
@@ -41,7 +41,10 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   const showTripleSuggestion = detectTripleTrigger(query);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
-  // Silme Onay Modalı İçin State'ler
+  // Proforma tablosu sayfalama
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
   const [deleteTarget, setDeleteTarget] = useState<Proforma | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -79,6 +82,17 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     });
   }, [proformas, query]);
 
+  // Arama değiştiğinde ya da liste değiştiğinde sayfayı başa al — aksi
+  // halde artık var olmayan bir sayfada boş bir tablo görünebilir.
+  useEffect(() => {
+    setPage(0);
+  }, [query, proformas.length]);
+
+  const paginated = useMemo(() => {
+    const start = page * rowsPerPage;
+    return filtered.slice(start, start + rowsPerPage);
+  }, [filtered, page, rowsPerPage]);
+
   const handleDownload = async (p: Proforma) => {
     setDownloadingId(p.id!);
     try {
@@ -88,7 +102,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }
   };
 
-  // Modaldaki Sil butonuna basılınca çalışır
   const confirmDelete = async () => {
     if (!deleteTarget || !deleteTarget.id) return;
 
@@ -131,7 +144,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         }}
       >
         <Toolbar sx={{ maxWidth: 1400, width: "100%", mx: "auto", px: { xs: 2, md: 3 }, gap: 2 }}>
-          {/* Logo ve Başlık */}
           <Stack
             direction="row"
             spacing={1.5}
@@ -178,7 +190,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
             />
           </Stack>
 
-          {/* Kullanıcı Bilgileri - Modern Kart */}
           <Box sx={{
             display: 'flex',
             alignItems: 'center',
@@ -253,7 +264,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
             </Box>
           </Box>
 
-          {/* Action Butonları */}
           <Stack direction="row" spacing={0.5} alignItems="center">
             <IconButton
               onClick={() => navigate("/account-settings")}
@@ -388,7 +398,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filtered.map((p) => {
+                {paginated.map((p) => {
                   const { total } = calcTotals(p);
                   return (
                     <TableRow key={p.id} hover>
@@ -422,11 +432,77 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                 })}
               </TableBody>
             </Table>
+
+            {/* Şık pagination alt çubuğu — MUI'nin varsayılan TablePagination'ı yerine */}
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              justifyContent="space-between"
+              alignItems="center"
+              spacing={1.5}
+              sx={{
+                px: 2.5,
+                py: 1.75,
+                borderTop: "1px solid",
+                borderColor: "divider",
+                bgcolor: "#FAF9F5",
+              }}
+            >
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="body2" color="text.secondary">
+                  {filtered.length === 0
+                    ? "Kayıt yok"
+                    : `${page * rowsPerPage + 1}–${Math.min((page + 1) * rowsPerPage, filtered.length)} / ${filtered.length} kayıt`}
+                </Typography>
+
+                <FormControl size="small" variant="standard">
+                  <Select
+                    value={rowsPerPage}
+                    onChange={(e) => {
+                      setRowsPerPage(Number(e.target.value));
+                      setPage(0);
+                    }}
+                    disableUnderline
+                    sx={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "text.secondary",
+                      "& .MuiSelect-select": {
+                        py: 0.25,
+                        px: 1,
+                        borderRadius: 1.5,
+                        bgcolor: "action.hover",
+                      },
+                    }}
+                  >
+                    {[5, 10, 25, 50].map((n) => (
+                      <MenuItem key={n} value={n} sx={{ fontSize: 13 }}>
+                        {n} / sayfa
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+
+              <Pagination
+                count={Math.max(1, Math.ceil(filtered.length / rowsPerPage))}
+                page={page + 1}
+                onChange={(_, newPage) => setPage(newPage - 1)}
+                color="primary"
+                shape="rounded"
+                size="small"
+                siblingCount={1}
+                boundaryCount={1}
+                sx={{
+                  "& .MuiPaginationItem-root": {
+                    fontWeight: 600,
+                  },
+                }}
+              />
+            </Stack>
           </TableContainer>
         )}
       </Container>
 
-      {/* Silme Onay Modalı */}
       <Dialog
         open={Boolean(deleteTarget)}
         onClose={() => !deleting && setDeleteTarget(null)}

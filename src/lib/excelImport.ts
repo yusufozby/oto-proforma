@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
 import type { Product } from "../types";
+import { parseTurkishNumber } from "./helpers";
 
 /**
  * Excel başlıklarını Product alanlarına eşler.
@@ -356,10 +357,7 @@ export async function parseExcelToProducts(
         1
       ),
 
-      unit: parseNumber(
-        mapped.unit,
-        0
-      ),
+      unit: parseTurkishNumber(row["Birim"]),
 
       image:
         String(mapped.image ?? ""),
