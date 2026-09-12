@@ -9,6 +9,20 @@ import type { Product } from "../types";
  * geçerli VE tekil olan Id'ler olduğu gibi korunur, geçersiz/eksik/
  * tekrarlı olanlara yeni benzersiz negatif Id verilir.
  */
+/**
+ * product.image alanı artık base64 değil, backend'in döndürdüğü dosya
+ * adı/relatif yol (örn. "3f2b1a9c.png"). Görseli göstermek için
+ * backend'in statik dosya sunduğu /public/storage/ önekiyle tam URL'e
+ * çevirir. Zaten tam bir URL (http…) veya eski base64 data URL ise
+ * dokunmadan olduğu gibi döner — geriye dönük uyumluluk için.
+ */
+export function resolveImageUrl(image: string | undefined | null, baseApi: string): string {
+  if (!image) return "";
+  if (image.startsWith("http://") || image.startsWith("https://") || image.startsWith("data:")) {
+    return image;
+  }
+  return `${baseApi}/public/storage/${image}`;
+}
 export function normalizeProductIds(products: Product[]): Product[] {
   const idCounts = new Map<number, number>();
 

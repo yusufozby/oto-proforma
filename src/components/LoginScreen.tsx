@@ -101,6 +101,9 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         console.log("Login response data:", data);
 
         onLogin({
+          google_map_link: data.google_map_link,
+          phone_link: data.phone_link,
+          website_link: data.website_link,
           center_address: data.center_address, fabric_address: data.fabric_address, email: data.email, seller_email: data.seller_email, username: username.trim(), token: data.token, firm: data.firm, fullname: data.fullname, role: data.role, userId: data.userId, can_add_proforma: data.can_add_proforma, phone: data.phone
         });
         navigate("/dashboard");

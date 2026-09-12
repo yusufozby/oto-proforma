@@ -153,6 +153,9 @@ export interface Session {
   center_address?: string;
   fabric_address?: string;
   seller_email?: string;
+  google_map_link?: string;
+  website_link?: string;
+  phone_link?: string;
   can_add_proforma: boolean;
 
 }

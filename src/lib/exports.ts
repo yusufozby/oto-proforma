@@ -1,179 +1,107 @@
 import jsPDF from "jspdf";
 import type { Proforma, Session } from "../types";
 import { calcTotals, tl } from "./helpers";
+import { baseApi } from "./storage";
 
 // =========================================================
-// FONT
+// SABİTLER & RENKLER
+// =========================================================
+const PAGE_WIDTH = 210;
+const PAGE_HEIGHT = 297;
+const MARGIN_LEFT = 10;
+const MARGIN_RIGHT = 10;
+const MARGIN_TOP = 10;
+const MARGIN_BOTTOM = 10;
+const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
+
+const FONT = "Inter";
+
+// Renk Paleti (RGB)
+const INK: [number, number, number] = [20, 20, 20];
+const TEXT_SECONDARY: [number, number, number] = [100, 100, 100];
+const ORANGE: [number, number, number] = [238, 140, 43];
+const ORANGE_DARK: [number, number, number] = [210, 115, 20];
+const SURFACE: [number, number, number] = [255, 255, 255];
+const CARD_BORDER: [number, number, number] = [225, 225, 225];
+const DIVIDER: [number, number, number] = [230, 230, 230];
+const SHADOW: [number, number, number] = [240, 240, 240];
+const TABLE_HEADER_BG: [number, number, number] = [248, 249, 250];
+const ROW_ALT_BG: [number, number, number] = [252, 252, 253];
+
+const CARD_RADIUS = 3;
+const PRODUCT_ROW_HEIGHT = 12;
+const PRODUCT_IMAGE_SIZE = 8;
+
+// =========================================================
+// FONT & ASSET IMPORTLARI
 // =========================================================
 
 // @ts-ignore
 import InterRegularUrl from "../assets/fonts/Inter-Regular.ttf?url";
-
 // @ts-ignore
 import InterBoldUrl from "../assets/fonts/Inter-Bold.ttf?url";
 
-// =========================================================
-// İLETİŞİM İKONLARI
-// =========================================================
-
 // @ts-ignore
 import PhoneIconUrl from "../assets/icons/phone.png?url";
-
 // @ts-ignore
 import WhatsappIconUrl from "../assets/icons/whatsapp.png?url";
-
 // @ts-ignore
 import MapsIconUrl from "../assets/icons/maps.png?url";
+// @ts-ignore
+import CompanyLogoUrl from "../assets/icons/logo.png?url";
+
+// Varsayılan Logo Placeholder (Base64)
+const DEFAULT_COMPANY_LOGO =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAgY0hSTQAAeiYAAICEAAD6AAAAgOgAAHUwAADqYAAAOpgAABd1NDZEAAAABGdBTUEAALGPC/xhBQAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAoKADAAQAAAABAAAAoAAAAAC118/4AAAIkUlEQVR4Ae1da1Qb1xl2R5Lgh3Ecx/m4SZw2Ttpme9p023/S3a/t5Kdpf6RpmqZNmrS3p/3R/pGm/dE2bdM0/SftJ333333333333333333/084pS1iAnm4u4s54R/S8A3fmfu/3zpy5I63WsXDh/S0g0AICAi0gINACAi0gINACAi0gINACAi0gINACAi0gI=";
 
 // =========================================================
-// SAYFA AYARLARI
+// GÖRSEL DÖNÜŞTÜRÜCÜ VE SIKIŞTIRICI HELPERS
 // =========================================================
 
-const PAGE_WIDTH = 210;
-const PAGE_HEIGHT = 297;
+async function compressAndResizeImage(
+  src: string | Blob,
+  targetWidth = 100,
+  targetHeight = 100,
+  quality = 0.7
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
 
-const MARGIN_LEFT = 12;
-const MARGIN_RIGHT = 12;
-const MARGIN_TOP = 12;
-const MARGIN_BOTTOM = 12;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext("2d");
 
-const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT; // 186mm
+      if (!ctx) {
+        reject("Canvas context oluşturulamadı");
+        return;
+      }
 
-// =========================================================
-// MATERIAL RENK PALETİ
-// =========================================================
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, targetWidth, targetHeight);
 
-const ORANGE = [240, 152, 46] as const;
-const ORANGE_DARK = [214, 124, 22] as const;
-const INK = [33, 33, 33] as const;
-const TEXT_SECONDARY = [110, 110, 110] as const;
-const DIVIDER = [224, 224, 224] as const;
-const CARD_BORDER = [214, 214, 214] as const;
-const SURFACE = [255, 255, 255] as const;
-const TABLE_HEADER_BG = [246, 246, 246] as const;
-const ROW_ALT_BG = [250, 250, 250] as const;
-const SHADOW = [232, 232, 232] as const;
+      const scale = Math.min(targetWidth / img.width, targetHeight / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      const x = (targetWidth - w) / 2;
+      const y = (targetHeight - h) / 2;
 
-const CARD_RADIUS = 2.4;
+      ctx.drawImage(img, x, y, w, h);
 
-// Ürün satırı ve görsel boyutu — 100x100'lük önizleme PDF'te bu ölçüde
-// (12x12mm, 16mm'lik kolonun içinde 2mm boşluk payıyla) basılıyor.
-// Ürün satırı ve görsel boyutu — 100x100'lük önizleme PDF'te bu ölçüde
-// basılıyor. Önceki 16/12mm boyutları tabloyu gereksiz büyütüyordu,
-// küçültüldü.
-const PRODUCT_ROW_HEIGHT = 12;
-const PRODUCT_IMAGE_SIZE = 8;
-// =========================================================
-// GENEL HELPERS
-// =========================================================
+      const compressedDataUrl = canvas.toDataURL("image/jpeg", quality);
+      resolve(compressedDataUrl);
+    };
 
-function safeString(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "";
-  }
-  return String(value);
-}
+    img.onerror = (err) => reject(err);
 
-function numberValue(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-// =========================================================
-// ARRAY BUFFER -> BASE64
-// =========================================================
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-    binary += String.fromCharCode(...chunk);
-  }
-
-  return btoa(binary);
-}
-
-// =========================================================
-// FONT DOSYASI DOĞRULAMA
-// =========================================================
-//
-// Bozuk/boş/yanlış bir TTF dosyası VFS'e sessizce yazıldığında jsPDF
-// glyph tablosunu düzgün gömemeyip metnin yerine dolu kutucuklar
-// ("tofu box") basar. Bu kontrol, sorunu sessizce üretime yansıtmak
-// yerine açık bir hata olarak baştan yakalar.
-// =========================================================
-
-function assertValidTtf(buffer: ArrayBuffer, label: string) {
-  if (buffer.byteLength < 1000) {
-    throw new Error(
-      `${label} dosyası çok küçük (${buffer.byteLength} byte) — muhtemelen bozuk veya yanlış dosya kopyalanmış.`
-    );
-  }
-
-  const view = new DataView(buffer);
-  const magic = view.getUint32(0, false);
-
-  // Geçerli TrueType/OpenType imzaları: 0x00010000 (TTF), 'true', 'OTTO' (OTF), 'ttcf' (koleksiyon)
-  const validMagics = [0x00010000, 0x74727565, 0x4f54544f, 0x74746366];
-
-  if (!validMagics.includes(magic)) {
-    throw new Error(
-      `${label} geçerli bir TTF/OTF dosyası değil (magic: 0x${magic.toString(16)}) — dosya muhtemelen bir HTML/hata sayfası ya da bozuk kopya.`
-    );
-  }
-}
-
-// =========================================================
-// FONTLARI PDF'E EKLE (Inter)
-// =========================================================
-
-async function registerFonts(pdf: jsPDF): Promise<void> {
-  const [regularResponse, boldResponse] = await Promise.all([
-    fetch(InterRegularUrl),
-    fetch(InterBoldUrl),
-  ]);
-
-  if (!regularResponse.ok || !boldResponse.ok) {
-    throw new Error("PDF fontları yüklenemedi.");
-  }
-
-  const [regularBuffer, boldBuffer] = await Promise.all([
-    regularResponse.arrayBuffer(),
-    boldResponse.arrayBuffer(),
-  ]);
-
-  assertValidTtf(regularBuffer, "Inter-Regular.ttf");
-  assertValidTtf(boldBuffer, "Inter-Bold.ttf");
-
-  const regularBase64 = arrayBufferToBase64(regularBuffer);
-  const boldBase64 = arrayBufferToBase64(boldBuffer);
-
-  pdf.addFileToVFS("Inter-Regular.ttf", regularBase64);
-  pdf.addFont("Inter-Regular.ttf", "Inter", "normal");
-
-  pdf.addFileToVFS("Inter-Bold.ttf", boldBase64);
-  pdf.addFont("Inter-Bold.ttf", "Inter", "bold");
-}
-
-const FONT = "Inter";
-
-// =========================================================
-// İKONLARI YÜKLE (base64)
-// =========================================================
-
-async function loadIconAsBase64(url: string): Promise<string> {
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`İkon yüklenemedi: ${url}`);
-  }
-
-  const buffer = await response.arrayBuffer();
-
-  return arrayBufferToBase64(buffer);
+    if (typeof src === "string") {
+      img.src = src;
+    } else {
+      img.src = URL.createObjectURL(src);
+    }
+  });
 }
 
 type ContactIcons = {
@@ -183,18 +111,124 @@ type ContactIcons = {
 };
 
 async function registerIcons(): Promise<ContactIcons> {
-  const [phone, whatsapp, maps] = await Promise.all([
-    loadIconAsBase64(PhoneIconUrl),
-    loadIconAsBase64(WhatsappIconUrl),
-    loadIconAsBase64(MapsIconUrl),
-  ]);
+  try {
+    const [phone, whatsapp, maps] = await Promise.all([
+      compressAndResizeImage(PhoneIconUrl, 64, 64, 0.8),
+      compressAndResizeImage(WhatsappIconUrl, 64, 64, 0.8),
+      compressAndResizeImage(MapsIconUrl, 64, 64, 0.8),
+    ]);
+    return { phone, whatsapp, maps };
+  } catch {
+    return { phone: "", whatsapp: "", maps: "" };
+  }
+}
 
-  return { phone, whatsapp, maps };
+async function loadCompanyLogo(): Promise<string> {
+  try {
+    return await compressAndResizeImage(CompanyLogoUrl, 150, 150, 0.8);
+  } catch {
+    return DEFAULT_COMPANY_LOGO;
+  }
+}
+
+async function preloadProductImages(products: Proforma["products"]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (!products || !Array.isArray(products)) return map;
+
+  const baseUrl = baseApi.replace(/\/+$/, "");
+
+  await Promise.all(
+    products.map(async (row) => {
+      const code = safeString(row.code).trim();
+      if (!code) return;
+
+      const url = `${baseUrl}/public/storage/${code}.jpg`;
+
+      try {
+        const response = await fetch(url);
+        if (!response.ok) return;
+
+        const blob = await response.blob();
+        const compressedBase64 = await compressAndResizeImage(blob, 100, 100, 0.6);
+
+        map.set(code, compressedBase64);
+      } catch {
+        // Görsel yoksa pas geç
+      }
+    })
+  );
+
+  return map;
 }
 
 // =========================================================
-// TEXT HELPERS
+// FONT YÜKLEME
 // =========================================================
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function assertValidTtf(buffer: ArrayBuffer, label: string) {
+  if (buffer.byteLength < 1000) {
+    throw new Error(`${label} dosyası çok küçük.`);
+  }
+  const view = new DataView(buffer);
+  const magic = view.getUint32(0, false);
+  const validMagics = [0x00010000, 0x74727565, 0x4f54544f, 0x74746366];
+  if (!validMagics.includes(magic)) {
+    throw new Error(`${label} geçerli bir TTF/OTF dosyası değil.`);
+  }
+}
+
+async function registerFonts(pdf: jsPDF): Promise<void> {
+  try {
+    const [regularResponse, boldResponse] = await Promise.all([
+      fetch(InterRegularUrl),
+      fetch(InterBoldUrl),
+    ]);
+
+    if (!regularResponse.ok || !boldResponse.ok) {
+      throw new Error("Font dosyaları sunucudan alınamadı.");
+    }
+
+    const [regularBuffer, boldBuffer] = await Promise.all([
+      regularResponse.arrayBuffer(),
+      boldResponse.arrayBuffer(),
+    ]);
+
+    assertValidTtf(regularBuffer, "Inter-Regular.ttf");
+    assertValidTtf(boldBuffer, "Inter-Bold.ttf");
+
+    pdf.addFileToVFS("Inter-Regular.ttf", arrayBufferToBase64(regularBuffer));
+    pdf.addFont("Inter-Regular.ttf", FONT, "normal");
+
+    pdf.addFileToVFS("Inter-Bold.ttf", arrayBufferToBase64(boldBuffer));
+    pdf.addFont("Inter-Bold.ttf", FONT, "bold");
+  } catch {
+    pdf.setFont("helvetica", "normal");
+  }
+}
+
+// =========================================================
+// YARDIMCI DİZİM FONKSİYONLARI
+// =========================================================
+
+function safeString(value: unknown): string {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function numberValue(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
 
 function setText(
   pdf: jsPDF,
@@ -226,28 +260,9 @@ function drawRightText(
   pdf.text(safeString(text), rightX, y, { align: "right" });
 }
 
-function drawCenterText(
-  pdf: jsPDF,
-  text: string,
-  centerX: number,
-  y: number,
-  size = 9,
-  bold = false,
-  color: readonly [number, number, number] = INK
-) {
-  pdf.setFont(FONT, bold ? "bold" : "normal");
-  pdf.setFontSize(size);
-  pdf.setTextColor(...color);
-  pdf.text(safeString(text), centerX, y, { align: "center" });
-}
-
 function splitText(pdf: jsPDF, text: string, maxWidth: number): string[] {
   return pdf.splitTextToSize(safeString(text), maxWidth) as string[];
 }
-
-// =========================================================
-// ÇİZİM HELPERS
-// =========================================================
 
 function drawLine(
   pdf: jsPDF,
@@ -319,54 +334,49 @@ function drawCard(
 }
 
 // =========================================================
-// HEADER
+// HEADER (PROFORMA + TARİHLER + ŞİRKET LOGOSU)
 // =========================================================
 
-function drawHeader(pdf: jsPDF, pf: Proforma): number {
+function drawHeader(pdf: jsPDF, pf: Proforma, logoBase64: string): number {
   const x = MARGIN_LEFT;
   const y = MARGIN_TOP;
 
-  setText(pdf, "PROFORMA", x, y + 10, 26, true);
+  // 1. Sol Üst: PROFORMA Başlığı
+  setText(pdf, "PROFORMA", x, y + 8, 22, true, INK);
 
-  drawRightText(
-    pdf,
-    `Tarih: ${pf.created_date
-      ? new Date(pf.created_date)
-        .toLocaleString("tr-TR")
-        .replace(",", "")
-      : ""
-    }`,
-    PAGE_WIDTH - MARGIN_RIGHT,
-    y + 5,
-    8.2,
-    true
-  );
+  // 2. Alt alta Tarih ve Geçerlilik Tarihi (PROFORMA başlığının altında aynı hizada)
+  const dateY = y + 15;
 
-  drawRightText(
-    pdf,
-    `Geçerlilik: ${pf.validity_date
-      ? new Date(pf.validity_date)
-        .toLocaleString("tr-TR")
-        .replace(",", "")
-      : ""
-    }`,
-    PAGE_WIDTH - MARGIN_RIGHT,
-    y + 10,
-    8.2,
-    true
-  );
+  const createdDateStr = pf.created_date
+    ? new Date(pf.created_date).toLocaleString("tr-TR").replace(",", "")
+    : "-";
 
-  drawLine(
-    pdf,
-    x,
-    y + 15,
-    PAGE_WIDTH - MARGIN_RIGHT,
-    y + 15,
-    ORANGE,
-    1.1
-  );
+  const validityDateStr = pf.validity_date
+    ? new Date(pf.validity_date).toLocaleString("tr-TR").replace(",", "")
+    : "-";
 
-  return y + 21;
+  setText(pdf, `Tarih: ${createdDateStr}`, x, dateY, 8.5, true, TEXT_SECONDARY);
+  setText(pdf, `Geçerlilik: ${validityDateStr}`, x, dateY + 4.5, 8.5, true, TEXT_SECONDARY);
+
+  // 3. Şirket Logosu (En sağa dayalı - justify-content: space-between)
+  const logoWidth = 24;
+  const logoHeight = 24;
+  const logoX = PAGE_WIDTH - MARGIN_RIGHT - logoWidth;
+  const logoY = y;
+
+  if (logoBase64) {
+    try {
+      pdf.addImage(logoBase64, "JPEG", logoX, logoY, logoWidth, logoHeight);
+    } catch {
+      // Yüklenemezse pas geç
+    }
+  }
+
+  // 4. Alt Turuncu Çizgi
+  const lineY = y + 26;
+  drawLine(pdf, x, lineY, PAGE_WIDTH - MARGIN_RIGHT, lineY, ORANGE, 1.1);
+
+  return lineY + 6;
 }
 
 // =========================================================
@@ -382,13 +392,7 @@ function drawContactIcons(
   size: number
 ) {
   const gap = 3.5;
-
-  type IconDef = {
-    image: string;
-    url: string;
-  };
-
-  const defs: IconDef[] = [
+  const defs = [
     { image: icons.phone, url: pf.phone_link ?? "" },
     { image: icons.whatsapp, url: pf.website_link ?? "" },
     { image: icons.maps, url: pf.google_map_link ?? "" },
@@ -400,20 +404,24 @@ function drawContactIcons(
     const left = currentLeft;
     const top = centerY - size / 2;
 
-    try {
-      pdf.addImage(def.image, "PNG", left, top, size, size);
-    } catch {
-      // İkon dosyası bulunamazsa/işlenemezse sessizce geç
+    if (def.image) {
+      try {
+        pdf.addImage(def.image, "JPEG", left, top, size, size);
+      } catch {
+        // İkon çizilemezse
+      }
     }
 
-    pdf.link(left, top, size, size, { url: def.url });
+    if (def.url) {
+      pdf.link(left, top, size, size, { url: def.url });
+    }
 
     currentLeft += size + gap;
   }
 }
 
 // =========================================================
-// TEKLİF VERİLEN FİRMA (alıcı + muhattap) + SATICI BİLGİLERİ
+// MÜŞTERİ VEYA SATICI KARTLARI
 // =========================================================
 
 function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, session: Session, startY: number): number {
@@ -424,9 +432,6 @@ function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, session: Session, startY: 
   const titleHeight = 8;
   const labelColWidth = 26;
 
-  // Alıcı (firma) + muhattap (kişi) bilgileri tek kartta — Muhattap
-  // ayrı bir kart olarak kaldırılmıştı ama bu alanlar hâlâ editörde
-  // dolduruluyor, o yüzden burada satır olarak geri eklendi.
   const buyerRows = [
     ["FİRMA", safeString(pf.buyer_name)],
     ["ADRES", safeString(pf.address)],
@@ -439,13 +444,6 @@ function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, session: Session, startY: 
     ["M. E-MAİL", safeString(pf.interlocuter_email)],
   ];
 
-  // NOT: Satıcı (kendi firma) bilgilerinin proformaya değil, hesabın
-  // kendisine ait olduğunu varsayarak session'dan okuyoruz — çünkü
-  // downloadProformaPdf zaten bir Session parametresi alıyordu ama hiç
-  // kullanılmıyordu, ve AccountSettings ekranı tam olarak bu alanları
-  // güncelleyip session'a yazıyor. Session tipinizde bu alanlar farklı
-  // adlandırıldıysa (ör. seller_email değil sadece email, ya da
-  // center_address değil merkez_adres gibi) burayı ona göre güncelleyin.
   const sellerRows = [
     ["FİRMA", safeString(session.firm)],
     ["MERKEZ", safeString(session.center_address)],
@@ -456,12 +454,10 @@ function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, session: Session, startY: 
 
   function calculateHeight(rows: string[][]) {
     let height = 9;
-
     for (const [, value] of rows) {
       const lines = splitText(pdf, value, boxWidth - labelColWidth - 8);
       height += Math.max(6, lines.length * 5);
     }
-
     return titleHeight + height + 3;
   }
 
@@ -469,13 +465,12 @@ function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, session: Session, startY: 
   const sellerHeight = calculateHeight(sellerRows);
   const boxHeight = Math.max(buyerHeight, sellerHeight);
 
-  // Sol kart — Teklif Verilen Firma (alıcı + muhattap)
+  // Sol Kart
   drawCard(pdf, leftX, startY, boxWidth, boxHeight, {
     header: { title: "Teklif Verilen Firma", height: titleHeight },
   });
 
   let y = startY + titleHeight + 6;
-
   for (const [label, value] of buyerRows) {
     setText(pdf, label, leftX + 4, y, 8, true, TEXT_SECONDARY);
     const lines = splitText(pdf, value, boxWidth - labelColWidth - 8);
@@ -483,13 +478,12 @@ function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, session: Session, startY: 
     y += Math.max(5.5, lines.length * 5);
   }
 
-  // Sağ kart — Satıcı Bilgileri
+  // Sağ Kart
   drawCard(pdf, rightX, startY, boxWidth, boxHeight, {
     header: { title: "Satıcı Bilgileri", height: titleHeight },
   });
 
   y = startY + titleHeight + 6;
-
   for (const [label, value] of sellerRows) {
     setText(pdf, label, rightX + 4, y, 8, true, TEXT_SECONDARY);
     const lines = splitText(pdf, value, boxWidth - labelColWidth - 8);
@@ -501,7 +495,7 @@ function drawBuyerAndSeller(pdf: jsPDF, pf: Proforma, session: Session, startY: 
 }
 
 // =========================================================
-// ÜRÜN KOLONLARI
+// ÜRÜN TABLOSU
 // =========================================================
 
 type ProductColumn = {
@@ -516,31 +510,25 @@ type ProductColumn = {
   | "totalAdet"
   | "birim"
   | "total";
-
   title: string;
   width: number;
   align: "left" | "center" | "right";
 };
 
 function getProductColumns(): ProductColumn[] {
-  // Toplam: 12+7+18+38+19+16+17+16+21+22 = 186mm (CONTENT_WIDTH)
   return [
-    { key: "image", title: "Görsel", width: 12, align: "center" },
-    { key: "no", title: "No", width: 7, align: "center" },
-    { key: "kod", title: "Kod", width: 18, align: "left" },
-    { key: "isim", title: "İsim", width: 38, align: "left" },
-    { key: "gtip", title: "GTİP", width: 19, align: "center" },
-    { key: "koliSayisi", title: "Koli\nSayısı", width: 16, align: "center" },
-    { key: "koliIciAdet", title: "Koli İçi\nAdet", width: 17, align: "center" },
-    { key: "totalAdet", title: "Total\nAdet", width: 16, align: "center" },
-    { key: "birim", title: "Birim ₺", width: 21, align: "right" },
-    { key: "total", title: "Total ₺", width: 22, align: "right" },
+    { key: "image", title: "Görsel", width: 10, align: "center" },
+    { key: "no", title: "No", width: 6, align: "center" },
+    { key: "kod", title: "Kod", width: 26, align: "left" },
+    { key: "isim", title: "İsim", width: 46, align: "left" },
+    { key: "gtip", title: "GTİP", width: 22, align: "center" },
+    { key: "koliSayisi", title: "Koli\nSayısı", width: 13, align: "center" },
+    { key: "koliIciAdet", title: "Koli İçi\nAdet", width: 13, align: "center" },
+    { key: "totalAdet", title: "Total\nAdet", width: 13, align: "center" },
+    { key: "birim", title: "Birim ₺", width: 18, align: "right" },
+    { key: "total", title: "Total ₺", width: 19, align: "right" },
   ];
 }
-
-// =========================================================
-// ÜRÜN DEĞERİ
-// =========================================================
 
 function getProductValue(
   row: Proforma["products"][number],
@@ -576,37 +564,25 @@ function getProductValue(
 
 function columnTextX(col: ProductColumn, colStartX: number): number {
   if (col.align === "center") return colStartX + col.width / 2;
-  if (col.align === "right") return colStartX + col.width - 3;
-  return colStartX + 3;
+  if (col.align === "right") return colStartX + col.width - 2;
+  return colStartX + 1.5;
 }
 
-// =========================================================
-// ÜRÜN GÖRSELİNİ BAS — resim yoksa/okunamıyorsa yer tutucu kare çizer
-// =========================================================
-
-function addProductImage(pdf: jsPDF, image: string | undefined, x: number, y: number, size: number) {
-  if (!image) {
-    pdf.setFillColor(...TABLE_HEADER_BG);
-    pdf.setDrawColor(...DIVIDER);
-    pdf.setLineWidth(0.25);
-    pdf.roundedRect(x, y, size, size, 1, 1, "FD");
-    return;
+function addProductImage(pdf: jsPDF, base64Image: string | undefined, x: number, y: number, size: number) {
+  if (base64Image) {
+    try {
+      pdf.addImage(base64Image, "JPEG", x, y, size, size);
+      return;
+    } catch {
+      // Çizim hatasında fallback kutuya düş
+    }
   }
 
-  try {
-    const format = image.includes("image/jpeg") || image.includes("image/jpg") ? "JPEG" : "PNG";
-    pdf.addImage(image, format, x, y, size, size);
-  } catch {
-    pdf.setFillColor(...TABLE_HEADER_BG);
-    pdf.setDrawColor(...DIVIDER);
-    pdf.setLineWidth(0.25);
-    pdf.roundedRect(x, y, size, size, 1, 1, "FD");
-  }
+  pdf.setFillColor(...TABLE_HEADER_BG);
+  pdf.setDrawColor(...DIVIDER);
+  pdf.setLineWidth(0.25);
+  pdf.roundedRect(x, y, size, size, 1, 1, "FD");
 }
-
-// =========================================================
-// TABLO KOLON BAŞLIK SATIRI
-// =========================================================
 
 function drawProductTableHeader(
   pdf: jsPDF,
@@ -621,16 +597,16 @@ function drawProductTableHeader(
   pdf.rect(x, y, tableWidth, headerHeight, "F");
 
   pdf.setFont(FONT, "bold");
-  pdf.setFontSize(6.2);
+  pdf.setFontSize(5.8);
   pdf.setTextColor(...TEXT_SECONDARY);
 
   let currentX = x;
 
   for (const column of columns) {
     const lines = column.title.split("\n");
-    const lineHeight = 3.2;
+    const lineHeight = 3.0;
     const startLineY =
-      y + headerHeight / 2 - ((lines.length - 1) * lineHeight) / 2 + 1.6;
+      y + headerHeight / 2 - ((lines.length - 1) * lineHeight) / 2 + 1.5;
 
     lines.forEach((line, index) => {
       const textY = startLineY + index * lineHeight;
@@ -646,9 +622,6 @@ function drawProductTableHeader(
 
   return headerHeight;
 }
-// =========================================================
-// ÜRÜN SATIRI — artık görsel kolonunu da basıyor
-// =========================================================
 
 function drawProductRow(
   pdf: jsPDF,
@@ -658,7 +631,8 @@ function drawProductRow(
   y: number,
   columns: ProductColumn[],
   alternate: boolean,
-  rowHeight: number
+  rowHeight: number,
+  imageMap: Map<string, string>
 ): number {
   const tableWidth = CONTENT_WIDTH;
 
@@ -668,13 +642,14 @@ function drawProductRow(
   }
 
   let currentX = x;
+  const productCode = safeString(row.code).trim();
 
   for (const column of columns) {
     if (column.key === "image") {
       const size = PRODUCT_IMAGE_SIZE;
       const imgX = currentX + (column.width - size) / 2;
       const imgY = y + (rowHeight - size) / 2;
-      addProductImage(pdf, row.image, imgX, imgY, size);
+      addProductImage(pdf, imageMap.get(productCode), imgX, imgY, size);
       currentX += column.width;
       continue;
     }
@@ -682,15 +657,15 @@ function drawProductRow(
     const value = getProductValue(row, index, column.key);
 
     pdf.setFont(FONT, column.key === "total" ? "bold" : "normal");
-    pdf.setFontSize(6.5);
+    pdf.setFontSize(5.8);
     pdf.setTextColor(...INK);
 
-    const lines = splitText(pdf, value, column.width - 4);
+    const lines = splitText(pdf, value, column.width - 2);
     const visibleLines = lines.slice(0, 2);
-    const lineHeight = 3.4;
+    const lineHeight = 3.0;
 
     const startYText =
-      y + rowHeight / 2 - ((visibleLines.length - 1) * lineHeight) / 2 + 1.6;
+      y + rowHeight / 2 - ((visibleLines.length - 1) * lineHeight) / 2 + 1.2;
 
     visibleLines.forEach((line, lineIndex) => {
       const textY = startYText + lineIndex * lineHeight;
@@ -706,17 +681,15 @@ function drawProductRow(
 
   return rowHeight;
 }
-// =========================================================
-// ÜRÜN TABLOSU — gerçek listeyi basıyor, sayfa taşarsa otomatik
-// yeni sayfaya devam ediyor ("Ürünler (devam)")
-// =========================================================
 
-function drawProductTable(pdf: jsPDF, pf: Proforma, startY: number): number {
+async function drawProductTable(pdf: jsPDF, pf: Proforma, startY: number): Promise<number> {
   const columns = getProductColumns();
   const tableWidth = CONTENT_WIDTH;
   const titleHeight = 8;
   const rowHeight = PRODUCT_ROW_HEIGHT;
   const products = pf.products || [];
+
+  const imageMap = await preloadProductImages(products);
 
   let chunkStartY = startY + 2;
   let currentY = chunkStartY + titleHeight;
@@ -727,12 +700,10 @@ function drawProductTable(pdf: jsPDF, pf: Proforma, startY: number): number {
   let index = 0;
 
   while (index < products.length) {
-    // Sayfanın sonuna yaklaşıldıysa: mevcut sayfadaki bölümü kartla
-    // kapat, yeni sayfa aç, kolon başlığını tekrar çiz ve devam et.
     if (currentY + rowHeight > PAGE_HEIGHT - MARGIN_BOTTOM - 15) {
       const chunkHeight = currentY - chunkStartY;
       drawCard(pdf, MARGIN_LEFT, chunkStartY, tableWidth, chunkHeight, {
-        header: { title: "Ürünler", height: titleHeight },
+        header: { title: isFirstChunk ? "Ürünler" : "Ürünler (devam)", height: titleHeight },
         elevated: false,
         fill: false,
       });
@@ -746,16 +717,14 @@ function drawProductTable(pdf: jsPDF, pf: Proforma, startY: number): number {
       continue;
     }
 
-    drawProductRow(pdf, products[index], index, MARGIN_LEFT, currentY, columns, index % 2 === 1, rowHeight);
+    drawProductRow(pdf, products[index], index, MARGIN_LEFT, currentY, columns, index % 2 === 1, rowHeight, imageMap);
     currentY += rowHeight;
     index += 1;
   }
 
-  // Son (veya tek) bölümü kartla kapat — ürün hiç yoksa da başlık +
-  // kolon başlığından oluşan boş tablo yine kart içinde görünür.
   const chunkHeight = currentY - chunkStartY;
   drawCard(pdf, MARGIN_LEFT, chunkStartY, tableWidth, chunkHeight, {
-    header: { title: "Ürünler", height: titleHeight },
+    header: { title: isFirstChunk ? "Ürünler" : "Ürünler (devam)", height: titleHeight },
     elevated: false,
     fill: false,
   });
@@ -764,7 +733,7 @@ function drawProductTable(pdf: jsPDF, pf: Proforma, startY: number): number {
 }
 
 // =========================================================
-// ŞARTLAR VE KOŞULLAR
+// ŞARTLAR VE ÖDEME BİLGİLERİ
 // =========================================================
 
 function drawConditions(pdf: jsPDF, pf: Proforma, startY: number): number {
@@ -798,16 +767,11 @@ function drawConditions(pdf: jsPDF, pf: Proforma, startY: number): number {
   return startY + conditionsHeight + 6;
 }
 
-// =========================================================
-// ÖDEME BİLGİLERİ (3/4) + TOPLAMLAR (1/4)
-// =========================================================
-
 function drawPaymentAndTotals(pdf: jsPDF, pf: Proforma, startY: number): number {
   const { araTotal, total } = calcTotals(pf);
   const effectiveIskonto = pf.discount !== 0 ? pf.discount || 0 : 0;
 
   const gap = 5;
-
   const paymentWidth = (CONTENT_WIDTH - gap) * 0.75;
   const totalsWidth = (CONTENT_WIDTH - gap) * 0.25;
 
@@ -820,7 +784,6 @@ function drawPaymentAndTotals(pdf: jsPDF, pf: Proforma, startY: number): number 
 
   const cardHeight = titleHeight + rowHeight * 3 + 4;
 
-  // SOL KART: ÖDEME BİLGİLERİ — gerçek pf alanları
   drawCard(pdf, paymentX, startY, paymentWidth, cardHeight, {
     header: { title: "Ödeme Bilgileri", height: titleHeight },
   });
@@ -852,7 +815,6 @@ function drawPaymentAndTotals(pdf: jsPDF, pf: Proforma, startY: number): number 
     rowY += rowHeight;
   });
 
-  // SAĞ KART: TOPLAMLAR
   drawCard(pdf, totalsX, startY, totalsWidth, cardHeight, { elevated: true });
 
   const rows = [
@@ -907,10 +869,6 @@ function drawPaymentAndTotals(pdf: jsPDF, pf: Proforma, startY: number): number 
   return startY + cardHeight + 8;
 }
 
-// =========================================================
-// FOOTER
-// =========================================================
-
 function drawFooter(pdf: jsPDF, pf: Proforma) {
   const pageCount = pdf.getNumberOfPages();
 
@@ -942,7 +900,7 @@ function drawFooter(pdf: jsPDF, pf: Proforma) {
 }
 
 // =========================================================
-// PDF OLUŞTUR
+// MÜŞTERİ DIŞA AKTARMA FONKSİYONLARI
 // =========================================================
 
 async function createProformaPdf(pf: Proforma, session: Session): Promise<jsPDF> {
@@ -951,12 +909,14 @@ async function createProformaPdf(pf: Proforma, session: Session): Promise<jsPDF>
     unit: "mm",
     format: "a4",
     compress: true,
-    putOnlyUsedFonts: true,
   });
 
   await registerFonts(pdf);
 
-  const icons = await registerIcons();
+  const [icons, logoBase64] = await Promise.all([
+    registerIcons(),
+    loadCompanyLogo(),
+  ]);
 
   pdf.setProperties({
     title: `Proforma-${safeString(pf.id)}`,
@@ -966,7 +926,7 @@ async function createProformaPdf(pf: Proforma, session: Session): Promise<jsPDF>
     keywords: "proforma, teklif, fatura",
   });
 
-  let y = drawHeader(pdf, pf);
+  let y = drawHeader(pdf, pf, logoBase64);
 
   const contactIconSize = 8;
   const contactIconAreaHeight = contactIconSize + 6;
@@ -984,7 +944,7 @@ async function createProformaPdf(pf: Proforma, session: Session): Promise<jsPDF>
 
   y = drawBuyerAndSeller(pdf, pf, session, y);
 
-  y = drawProductTable(pdf, pf, y);
+  y = await drawProductTable(pdf, pf, y);
 
   if (y + 35 > PAGE_HEIGHT - MARGIN_BOTTOM) {
     pdf.addPage();
@@ -1005,30 +965,16 @@ async function createProformaPdf(pf: Proforma, session: Session): Promise<jsPDF>
   return pdf;
 }
 
-// =========================================================
-// DOWNLOAD
-// =========================================================
-
 export async function downloadProformaPdf(pf: Proforma, session: Session): Promise<void> {
   const pdf = await createProformaPdf(pf, session);
-
-  const blob = pdf.output("blob");
-
-  console.log(`PDF boyutu: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
-
   pdf.save(`Proforma-${safeString(pf.id)}.pdf`);
 }
 
-// =========================================================
-// SHARE
-// =========================================================
-
 export async function shareProformaPdf(pf: Proforma, session: Session): Promise<void> {
   const pdf = await createProformaPdf(pf, session);
-
   const blob = pdf.output("blob");
 
-  const file = new File([blob], `Proforma-${safeString(pf.id)}.pdf`, {
+  const file = new File([blob], `${safeString(pf.code)}.pdf`, {
     type: "application/pdf",
   });
 
@@ -1037,7 +983,7 @@ export async function shareProformaPdf(pf: Proforma, session: Session): Promise<
   }
 
   await navigator.share({
-    title: `Proforma-${safeString(pf.id)}`,
+    title: `${safeString(pf.code)}`,
     text: "Proforma PDF",
     files: [file],
   });

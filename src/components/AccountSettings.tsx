@@ -174,9 +174,9 @@ export default function AccountSettings({ session, onSessionUpdate }: AccountSet
           {tab === "links" && (
             <Stack spacing={2.5} sx={{ maxWidth: 480 }}>
               <Typography variant="caption" color="text.secondary">İletişim ve konum bağlantı bilgilerinizi buradan yönetebilirsiniz.</Typography>
-              <TextField label="GSM" fullWidth value={(seller as any).gsm || ""} onChange={(e) => setSeller({ ...seller, gsm: e.target.value } as any)} placeholder="+90 5XX XXX XX XX" />
-              <TextField label="Google Maps Linki" fullWidth value={(seller as any).maps_link || ""} onChange={(e) => setSeller({ ...seller, maps_link: e.target.value } as any)} placeholder="https://maps.google.com/..." />
-              <TextField label="Website Linki" fullWidth value={(seller as any).website_link || ""} onChange={(e) => setSeller({ ...seller, website_link: e.target.value } as any)} placeholder="https://www.ornek.com" />
+              <TextField label="GSM" fullWidth value={(session as any).phone_link || ""} onChange={(e) => setSeller({ ...seller, gsm: e.target.value } as any)} placeholder="+90 5XX XXX XX XX" />
+              <TextField label="Google Maps Linki" fullWidth value={(session as any).google_map_link || ""} onChange={(e) => setSeller({ ...seller, maps_link: e.target.value } as any)} placeholder="https://maps.google.com/..." />
+              <TextField label="Website Linki" fullWidth value={(session as any).website_link || ""} onChange={(e) => setSeller({ ...seller, website_link: e.target.value } as any)} placeholder="https://www.ornek.com" />
               {linksMsg && <Alert severity="success">{linksMsg}</Alert>}
               <Box><Button variant="contained" startIcon={<SaveIcon />} onClick={saveLinks}>Kaydet</Button></Box>
             </Stack>

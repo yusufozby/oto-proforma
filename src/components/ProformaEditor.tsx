@@ -21,7 +21,10 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import SearchIcon from "@mui/icons-material/Search";
-import { calcTotals, tl, structuredCloneLite, parseTurkishNumber, normalizeProductIds } from "../lib/helpers";
+import CheckIcon from "@mui/icons-material/Check";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import BrokenImageOutlinedIcon from "@mui/icons-material/BrokenImageOutlined";
+import { calcTotals, tl, structuredCloneLite, parseTurkishNumber, normalizeProductIds, resolveImageUrl } from "../lib/helpers";
 import { parseExcelToProducts } from "../lib/excelImport";
 import { baseApi } from "../lib/storage";
 import type { Product, Proforma, Session } from "../types";
@@ -70,6 +73,7 @@ const COLUMNS: ColumnDef[] = [
  * editable = admin bu alanı doğrudan tablodaki TextField'dan değiştirebilir.
  * totalNumber ve totalPrice hesaplanır, edit edilemez.
  */
+
 const FIELD_BY_COLUMN: Partial<Record<ColumnKey, keyof Product | "totalNumber" | "totalPrice">> = {
   code: "code",
   name: "name",
@@ -106,6 +110,10 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
   const [productPage, setProductPage] = useState(0);
   const [productRowsPerPage, setProductRowsPerPage] = useState(10);
 
+  // Resim yüklenemeyen (404, bozuk yol vb.) ürünlerin Id'lerini tutar
+  // — hover overlay ve rozet ona göre "resim var/bozuk" ayrımı yapar.
+  const [brokenImageIds, setBrokenImageIds] = useState<Set<number>>(new Set());
+
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: "success" | "error" }>({
     open: false, message: "", severity: "success",
   });
@@ -135,9 +143,18 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
 
     const reader = new FileReader();
     reader.onload = () => {
+      setBrokenImageIds((prev) => {
+        const next = new Set(prev);
+        next.delete(imageTargetId);
+        return next;
+      });
       updateProductField(imageTargetId, "image", reader.result as string, false);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleImageLoadError = (rowId: number) => {
+    setBrokenImageIds((prev) => new Set(prev).add(rowId));
   };
 
   /*
@@ -217,6 +234,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
    * SÜTUNLAR
    */
   const visibleColumns = COLUMNS.filter((c) => colOpen[c.key]);
+
   const hiddenColumns = COLUMNS.filter((c) => !colOpen[c.key]);
 
   const hideColumn = (key: ColumnKey) => setColOpen((s) => ({ ...s, [key]: false }));
@@ -357,7 +375,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
     const file = e.dataTransfer.files?.[0];
     if (file) await processExcelFile(file);
   };
-
+  console.log(paginatedProducts)
   /*
    * CONDITIONS
    */
@@ -613,19 +631,73 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                           const field = FIELD_BY_COLUMN[c.key];
 
                           if (c.key === "image") {
+                            const hasImage = Boolean(r.image);
+                            const isBroken = brokenImageIds.has(r.Id);
+                            const showAsOk = hasImage && !isBroken;
+                            const imageUrl = hasImage ? resolveImageUrl(r.image, baseApi) : "";
+
                             return (
                               <TableCell key={c.key} align="center">
                                 <Box
                                   onClick={() => handleImageBoxClick(r.Id)}
                                   sx={{
-                                    width: 70, height: 70, borderRadius: 1.5, border: "1px dashed", borderColor: "divider",
-                                    display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
-                                    overflow: "hidden", bgcolor: "#FAF9F5", mx: "auto",
-                                    backgroundImage: r.image ? `url(${r.image})` : undefined,
-                                    backgroundSize: "cover", backgroundPosition: "center",
+                                    position: "relative",
+                                    width: 70, height: 70, borderRadius: 1.5,
+                                    border: showAsOk ? "1px solid" : isBroken ? "1px solid" : "1px dashed",
+                                    borderColor: showAsOk ? "success.main" : isBroken ? "error.main" : "divider",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    cursor: "pointer", overflow: "hidden", bgcolor: "#FAF9F5", mx: "auto",
+                                    "&:hover .image-overlay": { opacity: 1 },
                                   }}
                                 >
-                                  {!r.image && <UploadFileIcon sx={{ color: "text.secondary" }} fontSize="small" />}
+                                  {/* r.image varsa GERÇEK <img> ile göster — background-image sessizce
+                                      başarısız olabildiği için burada onError ile takip edilebiliyor */}
+                                  {hasImage && !isBroken && (
+                                    <Box
+                                      component="img"
+                                      src={imageUrl}
+                                      alt={r.name || "ürün görseli"}
+                                      onError={() => handleImageLoadError(r.Id)}
+                                      sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                    />
+                                  )}
+
+                                  {!hasImage && (
+                                    <UploadFileIcon sx={{ color: "text.secondary" }} fontSize="small" />
+                                  )}
+
+                                  {isBroken && (
+                                    <BrokenImageOutlinedIcon sx={{ color: "error.main" }} fontSize="small" />
+                                  )}
+
+                                  {/* Hover'da "değiştir" ipucu */}
+                                  {showAsOk && (
+                                    <Box
+                                      className="image-overlay"
+                                      sx={{
+                                        position: "absolute", inset: 0,
+                                        display: "flex", alignItems: "center", justifyContent: "center",
+                                        bgcolor: "rgba(0,0,0,0.45)", opacity: 0, transition: "opacity .15s",
+                                      }}
+                                    >
+                                      <EditOutlinedIcon sx={{ color: "#fff" }} fontSize="small" />
+                                    </Box>
+                                  )}
+
+                                  {/* Resim var işareti — sağ üstte küçük yeşil onay rozeti */}
+                                  {showAsOk && (
+                                    <Box
+                                      sx={{
+                                        position: "absolute", top: 3, right: 3,
+                                        width: 16, height: 16, borderRadius: "50%",
+                                        bgcolor: "success.main", color: "#fff",
+                                        display: "flex", alignItems: "center", justifyContent: "center",
+                                        boxShadow: "0 0 0 2px #fff",
+                                      }}
+                                    >
+                                      <CheckIcon sx={{ fontSize: 11 }} />
+                                    </Box>
+                                  )}
                                 </Box>
                               </TableCell>
                             );
@@ -799,6 +871,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
           {snack.message}
         </Alert>
       </Snackbar>
+
     </Box>
   );
 }
