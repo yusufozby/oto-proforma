@@ -50,9 +50,7 @@ export interface Proforma {
 
   discount: number;
 
-  google_map_link?: string;
-  phone_link?: string;
-  website_link?: string;
+
 
   products: Product[];
   conditions: Condition[];

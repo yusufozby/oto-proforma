@@ -96,7 +96,7 @@ export default function App() {
 
           <Route
             path="/account-settings"
-            element={session ? <AccountSettings session={session} onSessionUpdate={(s) => setSession(s)} /> : <Navigate to="/login" replace />}
+            element={session ? <AccountSettings setSession={setSession} session={session} onSessionUpdate={(s) => setSession(s)} /> : <Navigate to="/login" replace />}
           />
 
           <Route

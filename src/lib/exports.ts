@@ -383,19 +383,23 @@ function drawHeader(pdf: jsPDF, pf: Proforma, logoBase64: string): number {
 // İLETİŞİM İKONLARI
 // =========================================================
 
+// =========================================================
+// İLETİŞİM İKONLARI
+// =========================================================
+
 function drawContactIcons(
   pdf: jsPDF,
   icons: ContactIcons,
-  pf: Proforma,
+  session: Session,
   leftX: number,
   centerY: number,
   size: number
 ) {
   const gap = 3.5;
   const defs = [
-    { image: icons.phone, url: pf.phone_link ?? "" },
-    { image: icons.whatsapp, url: pf.website_link ?? "" },
-    { image: icons.maps, url: pf.google_map_link ?? "" },
+    { image: icons.phone, url: session.phone_link ?? "" },
+    { image: icons.whatsapp, url: session.website_link ?? "" },
+    { image: icons.maps, url: session.google_map_link ?? "" },
   ];
 
   let currentLeft = leftX;
@@ -934,7 +938,7 @@ async function createProformaPdf(pf: Proforma, session: Session): Promise<jsPDF>
   drawContactIcons(
     pdf,
     icons,
-    pf,
+    session,
     MARGIN_LEFT,
     y + contactIconSize / 2,
     contactIconSize
