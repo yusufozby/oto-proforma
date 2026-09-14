@@ -21,7 +21,7 @@ interface LoginScreenProps {
 
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const navigate = useNavigate();
-  const [roleTab, setRoleTab] = useState<UserRole>("firma");
+  const [roleTab, setRoleTab] = useState<UserRole>("müşteri");
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -225,7 +225,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             <Button
               size="small"
               variant="text"
-              onClick={() => switchRoleTab(roleTab === "admin" ? "firma" : "admin")}
+              onClick={() => switchRoleTab(roleTab === "admin" ? "müşteri" : "admin")}
               startIcon={roleTab === "admin" ? <ArrowBackIcon sx={{ fontSize: 14 }} /> : <AdminPanelSettingsIcon sx={{ fontSize: 14 }} />}
               sx={{ color: "text.secondary", textTransform: "none", fontSize: 12, minWidth: 0, px: 1, py: 0.25 }}
             >
@@ -233,7 +233,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             </Button>
           </Stack>
 
-          {roleTab === "firma" ? (
+          {roleTab === "müşteri" ? (
             <ToggleButtonGroup
               value={mode}
               exclusive
@@ -253,7 +253,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
 
           <Box component="form" onSubmit={submit}>
             <Stack spacing={2.5}>
-              {mode === "register" && roleTab === "firma" && (
+              {mode === "register" && roleTab === "müşteri" && (
                 <>
                   <TextField label="E-posta" type="email" value={email} onChange={(e) => setEmail(e.target.value)} fullWidth required placeholder="ornek@firma.com" />
                   <TextField

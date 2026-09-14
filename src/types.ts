@@ -23,6 +23,12 @@ export interface PaymentInfo {
   banka: string;
   iban: string;
 }
+export interface ProductProforma {
+  id?: number;
+  proforma_id: number;
+  product_id: number;
+  percel: number;
+}
 
 export interface Proforma {
   id?: number;
@@ -52,7 +58,6 @@ export interface Proforma {
 
 
 
-  products: Product[];
   conditions: Condition[];
 }
 export type AppointmentStatus = "Beklemede" | "Onaylandı" | "Reddedildi";
@@ -125,7 +130,7 @@ export interface DynamicValueComboBox {
   DynamicField: DynamicField;
 }
 /** İki rol: admin (her şeyi yönetir) ve firma (kendi proformalarını oluşturur, ürün ekleyip düzenleyemez). */
-export type UserRole = "admin" | "firma";
+export type UserRole = "admin" | "müşteri";
 
 export interface UserAccount {
   password: string;
@@ -141,7 +146,7 @@ export interface UserAccount {
 export interface Session {
   username: string;
   token: string;
-  role: string;
+  role: UserRole;
   phone?: string;
   fullname?: string;
   userId: number;

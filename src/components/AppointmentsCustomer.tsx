@@ -117,7 +117,7 @@ export default function AppointmentsCustomer({ session, onLogout }: Appointments
         setError("");
         try {
             const body = JSON.stringify({
-                appointmentDate: new Date(formDate).toISOString(),
+                appointment_date: new Date(formDate).toISOString(),
                 description: formDescription.trim(),
             });
 

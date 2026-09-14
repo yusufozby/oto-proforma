@@ -3,8 +3,8 @@ import { useNavigate, useParams, Navigate } from "react-router-dom";
 import {
   AppBar, Toolbar, Box, Container, Typography, Button, IconButton, TextField, Grid,
   Tabs, Tab, Table, TableHead, TableBody, TableRow, TableCell, TableContainer, Paper,
-  TablePagination, Accordion, AccordionSummary, AccordionDetails, Alert, Chip, Snackbar,
-  Divider, Stack, InputAdornment, CircularProgress,
+  TablePagination, Alert, Chip, Snackbar, Divider, Stack, InputAdornment, CircularProgress,
+  Popper, ClickAwayListener, List, ListItemButton, ListItemAvatar, Avatar, ListItemText,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import SaveIcon from "@mui/icons-material/Save";
@@ -13,21 +13,60 @@ import Inventory2Icon from "@mui/icons-material/Inventory2";
 import ChecklistIcon from "@mui/icons-material/Checklist";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import AddIcon from "@mui/icons-material/Add";
-import UploadFileIcon from "@mui/icons-material/UploadFile";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import CloseIcon from "@mui/icons-material/Close";
 import LockIcon from "@mui/icons-material/Lock";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import SearchIcon from "@mui/icons-material/Search";
-import CheckIcon from "@mui/icons-material/Check";
-import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import BrokenImageOutlinedIcon from "@mui/icons-material/BrokenImageOutlined";
-import { calcTotals, tl, structuredCloneLite, parseTurkishNumber, normalizeProductIds, resolveImageUrl } from "../lib/helpers";
-import { parseExcelToProducts } from "../lib/excelImport";
+import SubtitlesIcon from "@mui/icons-material/Subtitles";
+import { tl, structuredCloneLite, resolveImageUrl } from "../lib/helpers";
 import { baseApi } from "../lib/storage";
-import type { Product, Proforma, Session } from "../types";
+
+// --- Model Tanımlamaları ---
+export interface Product {
+  Id: number;
+  name: string;
+  code: string;
+  gtype?: string;
+  parcel_inside?: number;
+  image?: string;
+  unit?: number;
+  DynamicValues?: any[];
+}
+
+export interface ProductProforma {
+  Id: number;
+  proforma_id: number;
+  product_id: number;
+  parcel?: number;
+  Product: Product;
+}
+
+export interface Proforma {
+  id?: number;
+  user_id?: number;
+  buyer_name?: string;
+  province?: string;
+  address?: string;
+  phone?: string;
+  buyer_email?: string;
+  interlocuter_name?: string;
+  interlocuter_title?: string;
+  interlocuter_phone?: string;
+  interlocuter_email?: string;
+  created_date?: string;
+  validity_date?: string;
+  discount?: number;
+  conditions?: { id?: number; name: string; proforma_id?: number }[];
+  proformaProducts: ProductProforma[];
+}
+
+interface Session {
+  token: string;
+  username: string;
+  role: "admin" | "müşteri";
+}
 
 interface ProformaEditorProps {
   session: Session;
@@ -69,21 +108,73 @@ const COLUMNS: ColumnDef[] = [
   { key: "totalPrice", label: "Toplam ₺", align: "right", defaultOpen: true, mono: true, editable: false },
 ];
 
-/**
- * editable = admin bu alanı doğrudan tablodaki TextField'dan değiştirebilir.
- * totalNumber ve totalPrice hesaplanır, edit edilemez.
- */
+// --- Yardımcı Arama Metotları ---
+function normalizeTR(str: string): string {
+  return str
+    .replace(/İ/g, "i").replace(/I/g, "ı").replace(/Ğ/g, "g").replace(/ğ/g, "g")
+    .replace(/Ü/g, "u").replace(/ü/g, "u").replace(/Ş/g, "s").replace(/ş/g, "s")
+    .replace(/Ö/g, "o").replace(/ö/g, "o").replace(/Ç/g, "c").replace(/ç/g, "c")
+    .toLowerCase()
+    .trim();
+}
 
-const FIELD_BY_COLUMN: Partial<Record<ColumnKey, keyof Product | "totalNumber" | "totalPrice">> = {
-  code: "code",
-  name: "name",
-  gtype: "gtype",
-  parcel: "parcel",
-  parcel_inside: "parcel_inside",
-  totalNumber: "totalNumber",
-  unit: "unit",
-  totalPrice: "totalPrice",
-};
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+function fuzzySearchProducts(products: Product[], query: string): Product[] {
+  const normQuery = normalizeTR(query);
+  if (!normQuery) return [];
+
+  const queryTokens = normQuery.split(/\s+/).filter(Boolean);
+
+  const scored = products.map((product) => {
+    const normName = normalizeTR(product.name || "");
+    const normCode = normalizeTR(product.code || "");
+
+    if (normCode.includes(normQuery) || normName.includes(normQuery)) {
+      return { product, score: 100 };
+    }
+
+    let tokenMatches = 0;
+    queryTokens.forEach((token) => {
+      if (normName.includes(token) || normCode.includes(token)) tokenMatches++;
+    });
+
+    if (tokenMatches > 0) {
+      return { product, score: 70 + (tokenMatches / queryTokens.length) * 20 };
+    }
+
+    const distName = levenshteinDistance(normQuery, normName.slice(0, normQuery.length + 3));
+    if (distName <= 2) {
+      return { product, score: 50 - distName * 5 };
+    }
+
+    return { product, score: 0 };
+  });
+
+  return scored
+    .filter((item) => item.score > 25)
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.product);
+}
 
 function initialColumnState(): Record<ColumnKey, boolean> {
   const s = {} as Record<ColumnKey, boolean>;
@@ -96,70 +187,41 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
   const { id } = useParams<{ id: string }>();
 
   const [pf, setPf] = useState<Proforma | null>(null);
+  const [dbProducts, setDbProducts] = useState<Product[]>([]);
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [tab, setTab] = useState<TabKey>("buyer");
-
   const [colOpen, setColOpen] = useState<Record<ColumnKey, boolean>>(initialColumnState());
 
-  const [productFilter, setProductFilter] = useState("");
-  const [dragOver, setDragOver] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Ürünler tablosu sayfalama
   const [productPage, setProductPage] = useState(0);
   const [productRowsPerPage, setProductRowsPerPage] = useState(10);
-
-  // Resim yüklenemeyen (404, bozuk yol vb.) ürünlerin Id'lerini tutar
-  // — hover overlay ve rozet ona göre "resim var/bozuk" ayrımı yapar.
-  const [brokenImageIds, setBrokenImageIds] = useState<Set<number>>(new Set());
 
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: "success" | "error" }>({
     open: false, message: "", severity: "success",
   });
 
-  const [discountOpen, setDiscountOpen] = useState(false);
-
   useEffect(() => {
-    if (pf && pf.discount !== 0) {
-      setDiscountOpen(true);
-    }
-  }, [pf?.id]);
+    (async () => {
+      try {
+        const res = await fetch(`${baseApi}/api/products/all`, {
+          headers: { Authorization: `Bearer ${session.token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setDbProducts(data || []);
+        }
+      } catch (err) {
+        console.error("Ürün listesi alınamadı", err);
+      }
+    })();
+  }, [session.token]);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-
-  const [imageTargetId, setImageTargetId] = useState<number | null>(null);
-
-  const handleImageBoxClick = (rowId: number) => {
-    setImageTargetId(rowId);
-    imageInputRef.current?.click();
-  };
-
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || imageTargetId == null) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      setBrokenImageIds((prev) => {
-        const next = new Set(prev);
-        next.delete(imageTargetId);
-        return next;
-      });
-      updateProductField(imageTargetId, "image", reader.result as string, false);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleImageLoadError = (rowId: number) => {
-    setBrokenImageIds((prev) => new Set(prev).add(rowId));
-  };
-
-  /*
-   * PROFORMA YÜKLEME
-   */
   useEffect(() => {
     let cancelled = false;
 
@@ -184,12 +246,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
           if (cancelled) return;
           if (!json) { setNotFound(true); return; }
 
-          // ÖNEMLİ: backend'den gelen ürünlerin bazılarında Id alanı hiç
-          // olmayabiliyor (undefined). Aynı "kimliksiz" duruma düşen
-          // birden fazla ürün olduğunda, birini silmek/düzenlemek
-          // hepsini birden etkiliyordu. Yüklenir yüklenmez her ürüne
-          // garanti benzersiz bir Id atanıyor.
-          setPf({ ...json, products: normalizeProductIds(json.products ?? []) });
+          setPf({ ...json, proformaProducts: json.proformaProducts ?? [] });
         } catch {
           if (!cancelled) setNotFound(true);
         }
@@ -198,7 +255,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
           setPf({
             conditions: [],
             discount: 0,
-            products: [],
+            proformaProducts: [],
             user_id: session.role === "admin" ? 1 : 2,
           });
         }
@@ -208,14 +265,8 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
     return () => { cancelled = true; };
   }, [id, isEdit, session.username, session.token, session.role]);
 
-  /*
-   * PF GÜNCELLEME
-   */
   const updatePf = (updater: (p: Proforma) => Proforma) => {
-    setPf((prev) => {
-      if (!prev) return prev;
-      return updater(prev);
-    });
+    setPf((prev) => (prev ? updater(prev) : prev));
   };
 
   const update = (path: (string | number)[], value: unknown) => {
@@ -230,196 +281,120 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
     });
   };
 
-  /*
-   * SÜTUNLAR
-   */
   const visibleColumns = COLUMNS.filter((c) => colOpen[c.key]);
-
   const hiddenColumns = COLUMNS.filter((c) => !colOpen[c.key]);
 
   const hideColumn = (key: ColumnKey) => setColOpen((s) => ({ ...s, [key]: false }));
   const showColumn = (key: ColumnKey) => setColOpen((s) => ({ ...s, [key]: true }));
 
-  /*
-   * BENZERSİZ GEÇİCİ PRODUCT ID
-   */
-  const generateTempProductId = (products: Product[]): number => {
-    const ids = products.map((product) => Number(product.Id)).filter((productId) => Number.isFinite(productId));
-    const minId = ids.length > 0 ? Math.min(...ids) : 0;
-    return Math.min(minId, 0) - 1;
-  };
+  // Arama sonucunun sadece harf girildiğinde tetiklenmesi
+  const searchResults = useMemo(() => {
+    const query = searchQuery.trim();
+    if (!query) return []; // Harf yoksa boş dizi döner
+    return fuzzySearchProducts(dbProducts, query).slice(0, 10);
+  }, [searchQuery, dbProducts]);
 
-  /*
-   * ELLE YENİ ÜRÜN EKLE
-   */
-  const addBlankProduct = () =>
+  // Menünün açılma koşulu: searchOpen true olmalı VE arama metni 0'dan büyük olmalı
+  const isMenuOpen = searchOpen && searchQuery.trim().length > 0;
+
+  const handleSelectProduct = (product: Product) => {
     updatePf((p) => {
-      const newId = generateTempProductId(p.products);
-      const newProduct: Product = {
-        code: "", DynamicValues: [], name: "", gtype: "", parcel: 0, parcel_inside: 0,
-        unit: 0, image: "", Id: newId, proforma_id: p.id,
+      const exists = p.proformaProducts.some((item) => item.product_id === product.Id);
+      if (exists) {
+        setSnack({ open: true, message: "Bu ürün zaten listede ekli.", severity: "error" });
+        return p;
+      }
+
+      const tempId = Math.min(0, ...p.proformaProducts.map((pp) => pp.Id)) - 1;
+      const newProformaProduct: ProductProforma = {
+        Id: tempId,
+        proforma_id: p.id || 0,
+        product_id: product.Id,
+        parcel: 1,
+        Product: product,
       };
-      return { ...p, products: [...p.products, newProduct] };
+
+      return {
+        ...p,
+        proformaProducts: [...p.proformaProducts, newProformaProduct],
+      };
     });
 
-  /*
-   * PRODUCT SİL
-   */
-  const removeProduct = (id: number) =>
-    updatePf((p) => ({ ...p, products: p.products.filter((r) => r.Id !== id) }));
+    setSearchQuery("");
+    setSearchOpen(false);
+  };
 
-  /*
-   * PRODUCT FIELD UPDATE
-   */
-  const updateProductField = (id: number, field: keyof Product, value: string, numeric = false) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!searchOpen || searchResults.length === 0) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev + 1) % searchResults.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev - 1 + searchResults.length) % searchResults.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (searchResults[selectedIndex]) {
+        handleSelectProduct(searchResults[selectedIndex]);
+      }
+    } else if (e.key === "Escape") {
+      setSearchOpen(false);
+    }
+  };
+
+  const removeProformaProduct = (id: number) =>
     updatePf((p) => ({
       ...p,
-      products: p.products.map((r) => {
-        if (r.Id !== id) return r;
-        const newValue: any = numeric ? parseTurkishNumber(value) : value;
-        return { ...r, [field]: newValue };
+      proformaProducts: p.proformaProducts.filter((r) => r.Id !== id),
+    }));
+
+  const updateProductProformaField = (id: number, field: string, value: any) => {
+    updatePf((p) => ({
+      ...p,
+      proformaProducts: p.proformaProducts.map((item) => {
+        if (item.Id !== id) return item;
+        if (field === "parcel") return { ...item, parcel: Number(value) };
+        return {
+          ...item,
+          Product: { ...item.Product, [field]: value },
+        };
       }),
     }));
   };
 
-  /*
-   * ÜRÜN ARAMA
-   */
-  const filteredProducts = useMemo(() => {
+  const paginatedProformaProducts = useMemo(() => {
     if (!pf) return [];
-    const q = productFilter.trim().toLowerCase();
-    if (!q) return pf.products;
-    return pf.products.filter(
-      (r) => String(r.code ?? "").toLowerCase().includes(q) || String(r.name ?? "").toLowerCase().includes(q)
-    );
-  }, [pf, productFilter]);
-
-  // Arama değiştiğinde ya da ürün sayısı değiştiğinde sayfayı başa al —
-  // aksi halde artık var olmayan bir sayfada boş bir tablo görünebilir.
-  useEffect(() => {
-    setProductPage(0);
-  }, [productFilter, pf?.products.length]);
-
-  const paginatedProducts = useMemo(() => {
     const start = productPage * productRowsPerPage;
-    return filteredProducts.slice(start, start + productRowsPerPage);
-  }, [filteredProducts, productPage, productRowsPerPage]);
+    return pf.proformaProducts.slice(start, start + productRowsPerPage);
+  }, [pf, productPage, productRowsPerPage]);
 
-  /*
-   * EXCEL
-   */
-  const handleExcelClick = () => fileInputRef.current?.click();
-
-  const processExcelFile = async (file: File) => {
-    const okExt = /\.(xlsx|xls|csv)$/i.test(file.name);
-    if (!okExt) {
-      setSnack({ open: true, message: "Yalnızca .xlsx, .xls veya .csv dosyaları desteklenir.", severity: "error" });
-      return;
-    }
-
-    try {
-      const { products, skipped } = await parseExcelToProducts(file);
-
-      if (products.length === 0) {
-        setSnack({ open: true, message: "Excel dosyasında geçerli ürün bulunamadı.", severity: "error" });
-        return;
-      }
-
-      updatePf((p) => {
-        const existingProducts = [...p.products];
-
-        const normalizedProducts = products.map((product) => {
-          const rawId = Number(product.Id);
-          const hasValidId = product.Id !== undefined && product.Id !== null && Number.isFinite(rawId);
-
-          if (hasValidId) {
-            const alreadyExists = existingProducts.some((existing) => Number(existing.Id) === rawId);
-            if (!alreadyExists) {
-              const normalized = { ...product, Id: rawId };
-              existingProducts.push(normalized);
-              return normalized;
-            }
-          }
-
-          const newId = generateTempProductId(existingProducts);
-          const normalized = { ...product, Id: newId };
-          existingProducts.push(normalized);
-          return normalized;
-        });
-
-        return { ...p, products: [...p.products, ...normalizedProducts] };
-      });
-
-      setSnack({
-        open: true,
-        message: `${products.length} ürün eklendi${skipped ? ` (${skipped} satır atlandı)` : ""}.`,
-        severity: "success",
-      });
-    } catch {
-      setSnack({ open: true, message: "Excel dosyası okunamadı. Formatı kontrol edin.", severity: "error" });
-    }
-  };
-
-  const handleExcelChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    await processExcelFile(file);
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragOver(true); };
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragOver(false); };
-  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) await processExcelFile(file);
-  };
-  console.log(paginatedProducts)
-  /*
-   * CONDITIONS
-   */
-  const addCondition = () =>
-    updatePf((p) => ({ ...p, conditions: [...p.conditions, { name: "", proforma_id: pf?.id }] }));
-
-  const updateCondition = (i: number, value: string) =>
-    updatePf((p) => ({
-      ...p,
-      conditions: p.conditions.map((c, index) => (index === i ? { ...c, name: value } : c)),
-    }));
-
-  const removeCondition = (i: number) =>
-    updatePf((p) => ({ ...p, conditions: p.conditions.filter((_, idx) => idx !== i) }));
-
-  /*
-   * READ ONLY PRODUCT VALUE
-   */
-  const readOnlyValue = (r: Product, key: ColumnKey) => {
-    const totalAdet = (Number(r.parcel) || 0) * (Number(r.parcel_inside) || 0);
+  const readOnlyValue = (item: ProductProforma, key: ColumnKey) => {
+    const p = item.Product;
+    const parcelCount = Number(item.parcel) || 0;
+    const insideCount = Number(p?.parcel_inside) || 0;
+    const totalAdet = parcelCount * insideCount;
+    const unitPrice = Number(p?.unit) || 0;
 
     switch (key) {
-      case "code": return r.code || "—";
-      case "name": return r.name || "İsimsiz ürün";
-      case "gtype": return r.gtype || "—";
-      case "parcel": return String(r.parcel ?? 0);
-      case "parcel_inside": return String(r.parcel_inside ?? 0);
+      case "code": return p?.code || "—";
+      case "name": return p?.name || "İsimsiz ürün";
+      case "gtype": return p?.gtype || "—";
+      case "parcel": return String(parcelCount);
+      case "parcel_inside": return String(insideCount);
       case "totalNumber": return String(totalAdet);
-      case "unit": return tl(Number(r.unit) || 0);
-      case "totalPrice": return tl(totalAdet * (Number(r.unit) || 0));
+      case "unit": return tl(unitPrice);
+      case "totalPrice": return tl(totalAdet * unitPrice);
       default: return "";
     }
   };
 
-  /*
-   * KAYDET
-   */
   const handleSave = async () => {
     if (!pf) return;
     setSaving(true);
 
     try {
       const url = isEdit ? `${baseApi}/api/proforma/edit/${id}` : `${baseApi}/api/proforma/add`;
-
       const response = await fetch(url, {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
@@ -445,12 +420,10 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
     return (
       <Box sx={{ minHeight: 500, display: "flex", alignItems: "center", justifyContent: "center", gap: 1.5 }}>
         <CircularProgress size={20} thickness={5} />
-        <Typography variant="body2" color="text.secondary">yükleniyor…</Typography>
+        <Typography variant="body2" color="text.secondary">Yükleniyor…</Typography>
       </Box>
     );
   }
-
-  const { araTotal, total } = calcTotals(pf);
 
   return (
     <Box sx={{ minHeight: 600 }}>
@@ -489,7 +462,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
         </Paper>
 
         <Alert severity="info" icon={<LockIcon fontSize="small" />} sx={{ mb: 3 }}>
-          Satıcı bilgileri hesap ayarlarındaki firma profilinden otomatik alınır: -
+          Satıcı bilgileri hesap ayarlarındaki firma profilinden otomatik alınır.
         </Alert>
 
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2, borderBottom: 1, borderColor: "divider" }}>
@@ -499,6 +472,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
         </Tabs>
 
         <Paper variant="outlined" sx={{ p: 3 }}>
+          {/* TAB 1: BUYER */}
           {tab === "buyer" && (
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6}>
@@ -532,43 +506,145 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
             </Grid>
           )}
 
-          <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={handleImageFileChange} />
-
+          {/* TAB 2: PRODUCTS */}
           {tab === "products" && (
             <Box>
-              <Paper
-                variant="outlined"
-                onClick={handleExcelClick}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                sx={{
-                  mb: 2.5, p: 3, textAlign: "center", cursor: "pointer", borderStyle: "dashed", borderWidth: 2,
-                  borderColor: dragOver ? "primary.main" : "divider",
-                  bgcolor: dragOver ? "rgba(181,101,29,0.06)" : "#FAF9F5",
-                  borderRadius: 2, transition: "all .15s",
-                  display: "flex", flexDirection: { xs: "column", sm: "row" }, alignItems: "center", justifyContent: "center", gap: 1.5,
-                }}
-              >
-                <UploadFileIcon color={dragOver ? "primary" : "action"} sx={{ fontSize: 30 }} />
-                <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
-                  <Typography fontWeight={600} color={dragOver ? "primary.main" : "text.primary"}>
-                    Excel dosyasını buraya sürükleyin
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    veya tıklayarak seçin — .xlsx, .xls, .csv · sütunlar: Kod, İsim, GTİP, Koli Sayısı, Koli İçi Adet, Birim
-                  </Typography>
-                </Box>
-                <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={handleExcelChange} />
-              </Paper>
+              <ClickAwayListener onClickAway={() => setSearchOpen(false)}>
+                <Box sx={{ position: "relative", mb: 3 }}>
+                  <TextField
+                    inputRef={searchInputRef}
+                    size="medium"
+                    fullWidth
+                    value={searchQuery}
+                    onFocus={() => {
+                      // Tıklandığında sadece metin varsa menüyü aç
+                      if (searchQuery.trim().length > 0) setSearchOpen(true);
+                    }}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSearchQuery(val);
+                      // Sadece en az 1 karakter yazıldığında menüyü aç
+                      setSearchOpen(val.trim().length > 0);
+                      setSelectedIndex(0);
+                    }}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Ürün adı veya koduna göre arayın"
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon fontSize="medium" color="action" />
+                        </InputAdornment>
+                      ),
+                    }}
+                    sx={{
+                      "& .MuiOutlinedInput-root": {
+                        borderRadius: "16px", // Sabit köşe kavisleri
+                        bgcolor: "#FAF9F5",
+                        transition: "all 0.2s ease-in-out",
+                        "&.Mui-focused": {
+                          bgcolor: "#FFFFFF",
+                        },
+                      },
+                    }}
+                  />
 
-              <TextField
-                size="small" fullWidth value={productFilter}
-                onChange={(e) => setProductFilter(e.target.value)}
-                placeholder="Kod veya isimde ara…"
-                sx={{ mb: 2 }}
-                InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }}
-              />
+                  <Popper
+                    open={isMenuOpen} // Sadece harf/kelime girildiğinde açık olur
+                    anchorEl={searchInputRef.current}
+                    placement="bottom-start"
+                    modifiers={[
+                      {
+                        name: "offset",
+                        options: {
+                          offset: [0, 8], // Input ile menü arasına 8px boşluk
+                        },
+                      },
+                    ]}
+                    style={{
+                      width: searchInputRef.current?.clientWidth,
+                      zIndex: 1300,
+                    }}
+                  >
+                    <Paper
+                      elevation={8}
+                      sx={{
+                        borderRadius: "16px",
+                        border: "1px solid",
+                        borderColor: "divider",
+                        overflow: "hidden",
+                        bgcolor: "#FFFFFF",
+                        boxShadow: "0px 10px 30px rgba(0, 0, 0, 0.12)",
+                      }}
+                    >
+                      <Box sx={{ p: 1.5, px: 2, bgcolor: "#F5F5F7" }}>
+                        <Typography
+                          variant="caption"
+                          fontWeight={600}
+                          color="text.secondary"
+                          sx={{ letterSpacing: 0.5 }}
+                        >
+                          ARAMA SONUÇLARI
+                        </Typography>
+                      </Box>
+
+                      <List disablePadding sx={{ maxHeight: 360, overflowY: "auto" }}>
+                        {searchResults.length === 0 ? (
+                          <Box sx={{ p: 3, textAlign: "center", color: "text.secondary" }}>
+                            <Typography variant="body2">Eşleşen ürün bulunamadı.</Typography>
+                          </Box>
+                        ) : (
+                          searchResults.map((prod, idx) => {
+                            const isSelected = idx === selectedIndex;
+                            return (
+                              <ListItemButton
+                                key={prod.Id}
+                                selected={isSelected}
+                                onClick={() => handleSelectProduct(prod)}
+                                onMouseEnter={() => setSelectedIndex(idx)}
+                                sx={{
+                                  py: 1.2,
+                                  px: 2,
+                                  transition: "background-color 0.15s ease",
+                                  "&.Mui-selected": { bgcolor: "rgba(0, 113, 227, 0.08)" },
+                                  "&:hover": { bgcolor: "rgba(0, 0, 0, 0.04)" },
+                                }}
+                              >
+                                <ListItemAvatar>
+                                  <Avatar
+                                    src={resolveImageUrl(prod.image, baseApi)}
+                                    variant="rounded"
+                                    sx={{ width: 44, height: 44, bgcolor: "#F2F2F7", borderRadius: "8px" }}
+                                  >
+                                    <SubtitlesIcon color="action" />
+                                  </Avatar>
+                                </ListItemAvatar>
+                                <ListItemText
+                                  primary={
+                                    <Typography variant="body2" fontWeight={600} color="text.primary">
+                                      {prod.name}
+                                    </Typography>
+                                  }
+                                  secondary={
+                                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
+                                      <Chip label={prod.code} size="small" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
+                                      {prod.unit && (
+                                        <Typography variant="caption" color="text.secondary">
+                                          {tl(prod.unit)}
+                                        </Typography>
+                                      )}
+                                    </Stack>
+                                  }
+                                />
+                                <AddIcon fontSize="small" color="action" />
+                              </ListItemButton>
+                            );
+                          })
+                        )}
+                      </List>
+                    </Paper>
+                  </Popper>
+                </Box>
+              </ClickAwayListener>
 
               {hiddenColumns.length > 0 && (
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
@@ -584,10 +660,10 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
               )}
 
               <Typography variant="overline" color="text.secondary">
-                {productFilter ? `${filteredProducts.length} / ${pf.products.length}` : pf.products.length} ürün
+                {pf.proformaProducts.length} ürün eklendi
               </Typography>
 
-              <TableContainer component={Paper} variant="outlined" sx={{ overflowX: "auto" }}>
+              <TableContainer component={Paper} variant="outlined" sx={{ overflowX: "auto", borderRadius: 2 }}>
                 <Table size="small" sx={{ minWidth: 780 }}>
                   <TableHead>
                     <TableRow sx={{ bgcolor: "#EAE6DA" }}>
@@ -609,119 +685,48 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                   </TableHead>
 
                   <TableBody>
-                    {pf.products.length === 0 && (
+                    {pf.proformaProducts.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={visibleColumns.length + 1} align="center" sx={{ py: 5, color: "text.secondary" }}>
-                          Henüz ürün eklenmedi.
+                          Proformada ürün bulunmuyor. Yukarıdaki arama kısmından ürün ekleyebilirsiniz.
                         </TableCell>
                       </TableRow>
                     )}
 
-                    {pf.products.length > 0 && filteredProducts.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={visibleColumns.length + 1} align="center" sx={{ py: 5, color: "text.secondary" }}>
-                          Aramanızla eşleşen ürün yok.
-                        </TableCell>
-                      </TableRow>
-                    )}
-
-                    {paginatedProducts.map((r) => (
-                      <TableRow key={r.Id} hover>
+                    {paginatedProformaProducts.map((item) => (
+                      <TableRow key={item.Id} hover>
                         {visibleColumns.map((c) => {
-                          const field = FIELD_BY_COLUMN[c.key];
-
                           if (c.key === "image") {
-                            const hasImage = Boolean(r.image);
-                            const isBroken = brokenImageIds.has(r.Id);
-                            const showAsOk = hasImage && !isBroken;
-                            const imageUrl = hasImage ? resolveImageUrl(r.image, baseApi) : "";
-
+                            const imgUrl = resolveImageUrl(item.Product?.image, baseApi);
                             return (
                               <TableCell key={c.key} align="center">
                                 <Box
-                                  onClick={() => handleImageBoxClick(r.Id)}
                                   sx={{
-                                    position: "relative",
-                                    width: 70, height: 70, borderRadius: 1.5,
-                                    border: showAsOk ? "1px solid" : isBroken ? "1px solid" : "1px dashed",
-                                    borderColor: showAsOk ? "success.main" : isBroken ? "error.main" : "divider",
+                                    width: 50, height: 50, borderRadius: 1.5,
+                                    border: "1px solid", borderColor: "divider",
                                     display: "flex", alignItems: "center", justifyContent: "center",
-                                    cursor: "pointer", overflow: "hidden", bgcolor: "#FAF9F5", mx: "auto",
-                                    "&:hover .image-overlay": { opacity: 1 },
+                                    overflow: "hidden", bgcolor: "#FAF9F5", mx: "auto",
                                   }}
                                 >
-                                  {/* r.image varsa GERÇEK <img> ile göster — background-image sessizce
-                                      başarısız olabildiği için burada onError ile takip edilebiliyor */}
-                                  {hasImage && !isBroken && (
-                                    <Box
-                                      component="img"
-                                      src={imageUrl}
-                                      alt={r.name || "ürün görseli"}
-                                      onError={() => handleImageLoadError(r.Id)}
-                                      sx={{ width: "100%", height: "100%", objectFit: "cover" }}
-                                    />
-                                  )}
-
-                                  {!hasImage && (
-                                    <UploadFileIcon sx={{ color: "text.secondary" }} fontSize="small" />
-                                  )}
-
-                                  {isBroken && (
-                                    <BrokenImageOutlinedIcon sx={{ color: "error.main" }} fontSize="small" />
-                                  )}
-
-                                  {/* Hover'da "değiştir" ipucu */}
-                                  {showAsOk && (
-                                    <Box
-                                      className="image-overlay"
-                                      sx={{
-                                        position: "absolute", inset: 0,
-                                        display: "flex", alignItems: "center", justifyContent: "center",
-                                        bgcolor: "rgba(0,0,0,0.45)", opacity: 0, transition: "opacity .15s",
-                                      }}
-                                    >
-                                      <EditOutlinedIcon sx={{ color: "#fff" }} fontSize="small" />
-                                    </Box>
-                                  )}
-
-                                  {/* Resim var işareti — sağ üstte küçük yeşil onay rozeti */}
-                                  {showAsOk && (
-                                    <Box
-                                      sx={{
-                                        position: "absolute", top: 3, right: 3,
-                                        width: 16, height: 16, borderRadius: "50%",
-                                        bgcolor: "success.main", color: "#fff",
-                                        display: "flex", alignItems: "center", justifyContent: "center",
-                                        boxShadow: "0 0 0 2px #fff",
-                                      }}
-                                    >
-                                      <CheckIcon sx={{ fontSize: 11 }} />
-                                    </Box>
+                                  {imgUrl ? (
+                                    <Box component="img" src={imgUrl} alt={item.Product?.name} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                  ) : (
+                                    <BrokenImageOutlinedIcon sx={{ color: "text.secondary" }} fontSize="small" />
                                   )}
                                 </Box>
                               </TableCell>
                             );
                           }
 
-                          if (c.editable && field) {
-                            const currentValue = r[field as keyof Product];
-
+                          if (c.key === "parcel") {
                             return (
-                              <TableCell key={c.key} align={c.align} sx={{ minWidth: c.numeric ? 90 : 150, whiteSpace: "nowrap" }}>
+                              <TableCell key={c.key} align={c.align} sx={{ minWidth: 90 }}>
                                 <TextField
-                                  variant="outlined" fullWidth size="small"
-                                  type={c.numeric ? "number" : "text"}
-                                  value={currentValue ?? ""}
-                                  onChange={(e) => updateProductField(r.Id, field as keyof Product, e.target.value, c.numeric === true)}
-                                  className={c.mono ? "mono" : undefined}
-                                  inputProps={{
-                                    style: { textAlign: c.align },
-                                    ...(c.numeric ? { min: 0, step: c.key === "unit" ? "0.01" : "1" } : {}),
-                                  }}
-                                  sx={{
-                                    "& .MuiOutlinedInput-root": { fontSize: 13 },
-                                    "& .MuiOutlinedInput-input": { py: 0.75, px: 1 },
-                                  }}
+                                  type="number" size="small" variant="outlined"
+                                  value={item.parcel ?? 0}
+                                  onChange={(e) => updateProductProformaField(item.Id, "parcel", e.target.value)}
+                                  inputProps={{ style: { textAlign: "center" }, min: 1 }}
+                                  sx={{ "& .MuiOutlinedInput-input": { py: 0.75, px: 1 } }}
                                 />
                               </TableCell>
                             );
@@ -732,13 +737,13 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                               key={c.key} align={c.align} className={c.mono ? "mono" : undefined}
                               sx={{ fontWeight: c.key === "totalPrice" ? 600 : 400, whiteSpace: "nowrap" }}
                             >
-                              {readOnlyValue(r, c.key)}
+                              {readOnlyValue(item, c.key)}
                             </TableCell>
                           );
                         })}
 
                         <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                          <IconButton size="small" onClick={() => removeProduct(r.Id)} title="Sil">
+                          <IconButton size="small" onClick={() => removeProformaProduct(item.Id)} title="Kaldır">
                             <DeleteOutlineIcon fontSize="small" color="error" />
                           </IconButton>
                         </TableCell>
@@ -747,10 +752,10 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                   </TableBody>
                 </Table>
 
-                {filteredProducts.length > 0 && (
+                {pf.proformaProducts.length > 0 && (
                   <TablePagination
                     component="div"
-                    count={filteredProducts.length}
+                    count={pf.proformaProducts.length}
                     page={productPage}
                     onPageChange={(_, newPage) => setProductPage(newPage)}
                     rowsPerPage={productRowsPerPage}
@@ -759,102 +764,56 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                       setProductPage(0);
                     }}
                     rowsPerPageOptions={[5, 10, 25, 50]}
-                    labelRowsPerPage="Sayfa başına"
-                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                    labelRowsPerPage="Satır:"
                   />
                 )}
               </TableContainer>
-
-              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ my: 1.5 }} flexWrap="wrap" gap={1}>
-                <Button size="small" variant="outlined" color="primary" startIcon={<AddIcon />} onClick={addBlankProduct}>
-                  Elle Ürün Ekle
-                </Button>
-              </Stack>
-
-              <Box sx={{ maxWidth: 300, ml: "auto", mt: 3 }}>
-                <Accordion
-                  expanded={discountOpen}
-                  onChange={(_, expanded) => {
-                    setDiscountOpen(expanded);
-                    if (!expanded) update(["discount"], 0);
-                  }}
-                  disableGutters
-                  variant="outlined"
-                  sx={{
-                    mb: 2,
-                    "&:before": { display: "none" },
-                    bgcolor: discountOpen ? "background.paper" : "#EAE6DA",
-                    borderColor: discountOpen ? "divider" : "#DCD8CC",
-                  }}
-                >
-                  <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: discountOpen ? "primary.main" : "text.secondary" }} />}>
-                    <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: "100%" }}>
-                      <Typography fontWeight={600} color={discountOpen ? "text.primary" : "text.secondary"}>İskonto</Typography>
-                      <Chip
-                        size="small"
-                        label={discountOpen ? `%${pf.discount || 0}` : "kapalı"}
-                        color={discountOpen ? "primary" : "default"}
-                        sx={{ ml: "auto" }}
-                      />
-                    </Stack>
-                  </AccordionSummary>
-                  <AccordionDetails>
-                    <Stack spacing={1.5}>
-                      <TextField
-                        label="İskonto Yüzdesi (%)" type="number" size="small" fullWidth
-                        value={pf.discount ?? 0}
-                        onChange={(e) => update(["discount"], Number(e.target.value))}
-                      />
-                      <Button
-                        size="small" color="error" startIcon={<CloseIcon />}
-                        onClick={() => { update(["discount"], 0); setDiscountOpen(false); }}
-                      >
-                        Kaldır
-                      </Button>
-                    </Stack>
-                  </AccordionDetails>
-                </Accordion>
-
-                <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">Ara Toplam</Typography>
-                  <Typography className="mono" fontWeight={600}>{tl(araTotal)}</Typography>
-                </Stack>
-                <Divider sx={{ mb: 1 }} />
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="h6">Toplam</Typography>
-                  <Typography variant="h6" className="mono">{tl(total)}</Typography>
-                </Stack>
-              </Box>
             </Box>
           )}
 
+          {/* TAB 3: CONDITIONS */}
           {tab === "conditions" && (
-            <Stack spacing={1.5}>
-              {pf.conditions.map((c, i) => (
-                <Stack key={i} direction="row" spacing={1} alignItems="center">
-                  <Typography variant="body2" className="mono" color="text.secondary" sx={{ width: 20 }}>{i + 1}.</Typography>
-                  <TextField fullWidth size="small" value={c.name ?? ""} onChange={(e) => updateCondition(i, e.target.value)} />
-                  <IconButton size="small" onClick={() => removeCondition(i)}>
-                    <CloseIcon fontSize="small" color="error" />
-                  </IconButton>
-                </Stack>
-              ))}
-              <Box>
-                <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={addCondition}>Madde Ekle</Button>
-              </Box>
-            </Stack>
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 2 }}>Teklif Şartları</Typography>
+              <Button
+                startIcon={<AddIcon />} variant="outlined" size="small" sx={{ mb: 2 }}
+                onClick={() => updatePf((p) => ({ ...p, conditions: [...(p.conditions || []), { name: "" }] }))}
+              >
+                Yeni Şart Ekle
+              </Button>
+              <Stack spacing={1.5}>
+                {pf.conditions?.map((cond, idx) => (
+                  <Stack key={idx} direction="row" spacing={1} alignItems="center">
+                    <TextField
+                      fullWidth size="small" placeholder="Örn: Teslimat süresi 10 gündür."
+                      value={cond.name}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updatePf((p) => {
+                          const nextConds = [...(p.conditions || [])];
+                          nextConds[idx] = { ...nextConds[idx], name: val };
+                          return { ...p, conditions: nextConds };
+                        });
+                      }}
+                    />
+                    <IconButton size="small" onClick={() => updatePf((p) => ({ ...p, conditions: p.conditions?.filter((_, i) => i !== idx) }))}>
+                      <DeleteOutlineIcon color="error" fontSize="small" />
+                    </IconButton>
+                  </Stack>
+                ))}
+              </Stack>
+            </Box>
           )}
 
+          {/* TAB 4: PAYMENT */}
           {tab === "payment" && (
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6}>
-                <TextField label="Ünvan" fullWidth size="small" value={pf.pay_title ?? ""} onChange={(e) => update(["pay_title"], e.target.value)} />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField label="Banka" fullWidth size="small" value={pf.bank ?? ""} onChange={(e) => update(["bank"], e.target.value)} />
-              </Grid>
-              <Grid item xs={12}>
-                <TextField label="IBAN" fullWidth size="small" className="mono" value={pf.iban ?? ""} onChange={(e) => update(["iban"], e.target.value)} />
+                <TextField
+                  label="İndirim Oranı (%)" type="number" fullWidth size="small"
+                  value={pf.discount ?? 0}
+                  onChange={(e) => update(["discount"], Number(e.target.value))}
+                />
               </Grid>
             </Grid>
           )}
@@ -865,13 +824,8 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
         open={snack.open}
         autoHideDuration={4000}
         onClose={() => setSnack((s) => ({ ...s, open: false }))}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert severity={snack.severity} onClose={() => setSnack((s) => ({ ...s, open: false }))} sx={{ width: "100%" }}>
-          {snack.message}
-        </Alert>
-      </Snackbar>
-
+        message={snack.message}
+      />
     </Box>
   );
 }

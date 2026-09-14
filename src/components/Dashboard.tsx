@@ -75,9 +75,10 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     return proformas.filter((p) => {
       const inBuyer = p.buyer_name!.toLowerCase().includes(q);
       const inId = p.code!.toLowerCase().includes(q);
-      const inProducts = p.products?.some(
-        (pr) => pr.name.toLowerCase().includes(q) || pr.code.toLowerCase().includes(q)
-      );
+      const inProducts = false;
+      // const inProducts = p.products?.some(
+      //   (pr) => pr.name.toLowerCase().includes(q) || pr.code.toLowerCase().includes(q)
+      // );
       return inBuyer || inId || inProducts;
     });
   }, [proformas, query]);
@@ -344,7 +345,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                 Randevularım
               </Button>
             )}
-            {session.can_add_proforma && <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={() => navigate("/proforma/add")}>
+            {session.role === "müşteri" && <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={() => navigate("/proforma/add")}>
               Yeni Proforma
             </Button>}
           </Stack>

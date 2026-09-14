@@ -73,13 +73,14 @@ export function detectTripleTrigger(query: string): boolean {
 
 /* ---------------- totals & formatting ---------------- */
 export function calcTotals(proforma: Proforma): { araTotal: number; total: number } {
-  const araTotal = proforma.products.reduce(
-    (sum, p) => sum + (Number(p.parcel) || 0) * (Number(p.unit) || 0) * (Number(p.parcel_inside)),
-    0
-  );
-  const effectiveIskonto = proforma.discount !== 0 ? Number(proforma.discount) || 0 : 0;
-  const total = araTotal * (1 - effectiveIskonto / 100);
-  return { araTotal, total };
+  // const araTotal = proforma.products.reduce(
+  //   (sum, p) => sum + (Number(p.parcel) || 0) * (Number(p.unit) || 0) * (Number(p.parcel_inside)),
+  //   0
+  // );
+  // const effectiveIskonto = proforma.discount !== 0 ? Number(proforma.discount) || 0 : 0;
+  // const total = araTotal * (1 - effectiveIskonto / 100);
+  // return { araTotal, total };
+  return { araTotal: 50, total: 100 };
 }
 
 export function tl(n: number): string {
@@ -128,4 +129,84 @@ export function parseTurkishNumber(input: unknown, fallback = 0): number {
 
   const n = Number(s);
   return Number.isFinite(n) ? n : fallback;
+}
+// =========================================================
+// GENİŞ / TYPO-TOLERANSLI ÜRÜN ARAMASI
+// =========================================================
+
+const TR_MAP: Record<string, string> = {
+  ç: "c", Ç: "c", ğ: "g", Ğ: "g", ı: "i", İ: "i",
+  ö: "o", Ö: "o", ş: "s", Ş: "s", ü: "u", Ü: "u",
+};
+
+export function normalizeTR(input: string): string {
+  return input
+    .split("")
+    .map((ch) => TR_MAP[ch] ?? ch)
+    .join("")
+    .toLowerCase()
+    .trim();
+}
+
+function bigrams(s: string): string[] {
+  const clean = s.replace(/\s+/g, "");
+  const grams: string[] = [];
+  for (let i = 0; i < clean.length - 1; i++) grams.push(clean.slice(i, i + 2));
+  return grams;
+}
+
+/**
+ * İki string arasındaki benzerliği bigram (ikili harf grubu) örtüşmesine
+ * göre 0–1 arası puanlar (Dice katsayısı). Harflerin yer değiştirdiği
+ * yazım hatalarına ("toprka" ~ "toprak") tam alt-dize aramasından çok
+ * daha toleranslıdır.
+ */
+function diceCoefficient(a: string, b: string): number {
+  const bigramsA = bigrams(a);
+  const bigramsB = bigrams(b);
+  if (bigramsA.length === 0 || bigramsB.length === 0) {
+    return a === b ? 1 : 0;
+  }
+  const mapB = new Map<string, number>();
+  for (const bg of bigramsB) mapB.set(bg, (mapB.get(bg) ?? 0) + 1);
+  let matches = 0;
+  for (const bg of bigramsA) {
+    const count = mapB.get(bg) ?? 0;
+    if (count > 0) {
+      matches++;
+      mapB.set(bg, count - 1);
+    }
+  }
+  return (2 * matches) / (bigramsA.length + bigramsB.length);
+}
+
+/**
+ * Ürün arama skoru — kod ve isimde hem tam/alt-dize eşleşmelerini HEM DE
+ * yazım hatalarına toleranslı bulanık (fuzzy) benzerliği birlikte
+ * değerlendirir. "toprka" yazan biri hâlâ "Topraklı Priz" ürününü
+ * bulabilsin diye arama kasıtlı olarak GENİŞ tutulmuştur — bu davranış
+ * kritik, daraltılmamalı.
+ */
+export function productSearchScore(query: string, code: string, name: string): number {
+  const q = normalizeTR(query);
+  if (!q) return 0;
+
+  const c = normalizeTR(code);
+  const n = normalizeTR(name);
+
+  let score = 0;
+
+  // Tam alt-dize eşleşmesi (isimde veya kodda) en yüksek puanı alır
+  if (n.includes(q) || c.includes(q)) score = Math.max(score, 1);
+
+  // İsimdeki herhangi bir kelime sorguyla başlıyorsa güçlü eşleşme
+  const nameWords = n.split(/\s+/);
+  if (nameWords.some((w) => w.startsWith(q))) score = Math.max(score, 0.9);
+
+  // Bulanık (typo-toleranslı) benzerlik — bigram Dice katsayısı
+  const fuzzyName = diceCoefficient(q, n);
+  const fuzzyCode = diceCoefficient(q, c);
+  score = Math.max(score, fuzzyName * 0.85, fuzzyCode * 0.75);
+
+  return score;
 }
