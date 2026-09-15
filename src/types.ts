@@ -23,11 +23,24 @@ export interface PaymentInfo {
   banka: string;
   iban: string;
 }
+
+export interface Product {
+  id: number;
+  name: string;
+  gtype?: string;
+  code: string;
+  parcel_inside?: number;
+  unit?: number;
+  image?: string;
+  DynamicValues?: DynamicValue[];
+}
+
 export interface ProductProforma {
-  id?: number;
+  Id?: number;
   proforma_id: number;
   product_id: number;
-  percel: number;
+  parcel?: number;
+  Product: Product;
 }
 
 export interface Proforma {
@@ -56,10 +69,11 @@ export interface Proforma {
 
   discount: number;
 
-
+  proformaProducts: ProductProforma[];
 
   conditions: Condition[];
 }
+
 export type AppointmentStatus = "Beklemede" | "Onaylandı" | "Reddedildi";
 
 export interface Appointment {
@@ -73,19 +87,6 @@ export interface Appointment {
   firm?: string;
   username?: string;
 }
-export interface Product {
-  Id: number;
-  name: string;
-  gtype?: string;
-  parcel?: number;
-  code: string;
-  parcel_inside?: number;
-  unit?: number;
-  proforma_id?: number;
-  image?: string;
-  DynamicValues: DynamicValue[];
-}
-
 
 export interface Condition {
   Id?: number;
@@ -119,7 +120,6 @@ export interface DynamicType {
 
 export interface Role {
   Id: number;
-
   name: string;
 }
 
@@ -129,6 +129,7 @@ export interface DynamicValueComboBox {
   dynamic_field_id: number;
   DynamicField: DynamicField;
 }
+
 /** İki rol: admin (her şeyi yönetir) ve firma (kendi proformalarını oluşturur, ürün ekleyip düzenleyemez). */
 export type UserRole = "admin" | "müşteri";
 
@@ -160,7 +161,6 @@ export interface Session {
   website_link?: string;
   phone_link?: string;
   can_add_proforma: boolean;
-
 }
 
 export type UsersMap = Record<string, UserAccount>;

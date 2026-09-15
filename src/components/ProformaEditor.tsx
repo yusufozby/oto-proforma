@@ -22,45 +22,7 @@ import BrokenImageOutlinedIcon from "@mui/icons-material/BrokenImageOutlined";
 import SubtitlesIcon from "@mui/icons-material/Subtitles";
 import { tl, structuredCloneLite, resolveImageUrl } from "../lib/helpers";
 import { baseApi } from "../lib/storage";
-
-// --- Model Tanımlamaları ---
-export interface Product {
-  Id: number;
-  name: string;
-  code: string;
-  gtype?: string;
-  parcel_inside?: number;
-  image?: string;
-  unit?: number;
-  DynamicValues?: any[];
-}
-
-export interface ProductProforma {
-  Id: number;
-  proforma_id: number;
-  product_id: number;
-  parcel?: number;
-  Product: Product;
-}
-
-export interface Proforma {
-  id?: number;
-  user_id?: number;
-  buyer_name?: string;
-  province?: string;
-  address?: string;
-  phone?: string;
-  buyer_email?: string;
-  interlocuter_name?: string;
-  interlocuter_title?: string;
-  interlocuter_phone?: string;
-  interlocuter_email?: string;
-  created_date?: string;
-  validity_date?: string;
-  discount?: number;
-  conditions?: { id?: number; name: string; proforma_id?: number }[];
-  proformaProducts: ProductProforma[];
-}
+import { Proforma, Product, ProductProforma } from "../types";
 
 interface Session {
   token: string;
@@ -108,8 +70,6 @@ const COLUMNS: ColumnDef[] = [
   { key: "totalPrice", label: "Toplam ₺", align: "right", defaultOpen: true, mono: true, editable: false },
 ];
 
-// --- Yardımcı Arama Metotları ---
-// --- Yardımcı Arama Metotları ---
 // --- Yardımcı Arama Metotları ---
 function normalizeTR(str: string): string {
   return str
@@ -184,11 +144,6 @@ function diceCoefficient(a: string, b: string): number {
 }
 
 // Karakter çoklu-kümesi (multiset) benzerliği — SIRAYI HİÇ ÖNEMSEMEZ.
-// "pirz" ve "priz" tam olarak aynı harflere sahip (p,i,r,z), sadece
-// sırası farklı; bigram bu durumda 0 benzerlik verirken (bitişik harf
-// takası tüm ikili grupları değiştirdiği için), bu yöntem %100 verir.
-// Özellikle kısa kelimelerdeki (4-6 harf) harf takası yazım hatalarını
-// yakalamak için kritik.
 function charMultisetSimilarity(a: string, b: string): number {
   if (a.length === 0 || b.length === 0) return 0;
   const countsA = new Map<string, number>();
@@ -207,22 +162,6 @@ function charMultisetSimilarity(a: string, b: string): number {
 
 /**
  * GENİŞ ARAMA — kasıtlı olarak toleranslı tutulmuştur, daraltılmamalı.
- *
- * Birden fazla stratejiyi birlikte kullanır:
- * 1) Tam alt-dize eşleşmesi (isim veya kodun HERHANGİ bir yerinde).
- * 2) Kelime bazlı eşleşme — sorgudaki her kelime, üründeki herhangi bir
- *    kelimenin içinde geçiyorsa.
- * 3) Bigram (ikili harf) benzerliği — eksik/fazla harf yazım hatalarını
- *    yakalar ("mtr" -> "metre").
- * 4) Karakter çoklu-kümesi benzerliği — SIRA ÖNEMSİZ, harf takası
- *    hatalarını yakalar ("pirz" -> "priz").
- * 5) Damerau-Levenshtein mesafesi — bitişik harf takasını tek işlem
- *    sayan, kısa kelimelerde en isabetli klasik mesafe ölçüsü.
- *
- * Her ürün adındaki kelimeler tek tek de karşılaştırılır ("4'lü
- * Topraklı Grup Priz (Klemensli)" gibi çok kelimeli isimlerde "priz"
- * sorgusu sadece o kelimeyle kıyaslanır, diğer kelimeler skoru
- * sulandırmaz).
  */
 function fuzzySearchProducts(products: Product[], query: string): Product[] {
   const normQuery = normalizeTR(query);
@@ -251,13 +190,10 @@ function fuzzySearchProducts(products: Product[], query: string): Product[] {
 
     let score = 0;
 
-    // 1) Tam alt-dize eşleşmesi
     if (normName.includes(normQuery) || normCode.includes(normQuery)) {
       score = Math.max(score, 100);
     }
 
-    // 2) Kelime bazlı: sorgudaki her token, isimdeki herhangi bir
-    // kelimenin içinde geçiyor mu
     let tokenMatches = 0;
     queryTokens.forEach((token) => {
       if (normName.includes(token) || normCode.includes(token)) tokenMatches++;
@@ -266,27 +202,20 @@ function fuzzySearchProducts(products: Product[], query: string): Product[] {
       score = Math.max(score, 70 + (tokenMatches / queryTokens.length) * 20);
     }
 
-    // 3-5) Her sorgu kelimesini, üründeki her kelimeyle ayrı ayrı
-    // karşılaştır (bigram + multiset + Damerau-Levenshtein), en iyi
-    // eşleşen kelime çiftini al.
     let bestWordMatch = 0;
     for (const qToken of queryTokens) {
       for (const nToken of nameTokens) {
         bestWordMatch = Math.max(bestWordMatch, wordScore(qToken, nToken));
       }
-      // Kod ile de karşılaştır (örn. "UR001" gibi kısa kodlarda typo)
       bestWordMatch = Math.max(bestWordMatch, wordScore(qToken, normCode));
     }
     score = Math.max(score, bestWordMatch * 85);
 
-    // Tüm sorgu ile tüm isim arasında da aynı üçlü kontrol (çok
-    // kelimeli sorgularda bütün ismi tek parça yazan kullanıcılar için)
     score = Math.max(score, wordScore(normQuery, normName) * 80);
 
     return { product, score };
   });
 
-  // Eşik düşük tutuldu — arama kasıtlı olarak GENİŞ.
   return scored
     .filter((item) => item.score > 15)
     .sort((a, b) => b.score - a.score)
@@ -363,7 +292,30 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
           if (cancelled) return;
           if (!json) { setNotFound(true); return; }
 
-          setPf({ ...json, proformaProducts: json.proformaProducts ?? [] });
+          // Backend "products" (flat) döner, frontend "proformaProducts"
+          // (nested Product) bekliyor — burada dönüştürüyoruz.
+          const mappedProformaProducts: ProductProforma[] = (json.products ?? []).map((p: any) => ({
+            Id: p.id,
+            proforma_id: json.id,
+            product_id: p.product_id,
+            parcel: p.parcel,
+            Product: {
+              Id: p.product_id,
+              name: p.name,
+              code: p.code,
+              gtype: p.gtype,
+              parcel_inside: p.parcel_inside,
+              unit: p.unit,
+              image: p.image,
+              DynamicValues: p.dynamicValues ?? [],
+            },
+          }));
+
+          setPf({
+            ...json,
+            conditions: json.conditions ?? [],
+            proformaProducts: mappedProformaProducts,
+          });
         } catch {
           if (!cancelled) setNotFound(true);
         }
@@ -404,34 +356,32 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
   const hideColumn = (key: ColumnKey) => setColOpen((s) => ({ ...s, [key]: false }));
   const showColumn = (key: ColumnKey) => setColOpen((s) => ({ ...s, [key]: true }));
 
-  // Arama sonucunun sadece harf girildiğinde tetiklenmesi
-  // Arama sonucunun sadece harf girildiğinde tetiklenmesi ve maks 5 ürün dönmesi
   const searchResults = useMemo(() => {
     const query = searchQuery.trim();
-    if (!query) return []; // Harf yoksa boş dizi döner
-    return fuzzySearchProducts(dbProducts, query).slice(0, 5); // 10 yerine 5 yapıldı
+    if (!query) return [];
+    return fuzzySearchProducts(dbProducts, query).slice(0, 5);
   }, [searchQuery, dbProducts]);
 
-  // Menünün açılma koşulu: searchOpen true olmalı VE arama metni 0'dan büyük olmalı
   const isMenuOpen = searchOpen && searchQuery.trim().length > 0;
 
   const handleSelectProduct = (product: Product) => {
     updatePf((p) => {
-      const exists = p.proformaProducts.some((item) => item.product_id === product.Id);
+      const exists = p.proformaProducts.some((item) => item.product_id === product.id);
       if (exists) {
         setSnack({ open: true, message: "Bu ürün zaten listede ekli.", severity: "error" });
         return p;
       }
 
-      const tempId = Math.min(0, ...p.proformaProducts.map((pp) => pp.Id)) - 1;
+      const tempId = Math.min(0, ...p.proformaProducts.map((pp) => pp.Id ?? 0)) - 1;
+
       const newProformaProduct: ProductProforma = {
         Id: tempId,
         proforma_id: p.id || 0,
-        product_id: product.Id,
+        product_id: product.id,
         parcel: 1,
         Product: product,
       };
-
+      console.log(newProformaProduct);
       return {
         ...p,
         proformaProducts: [...p.proformaProducts, newProformaProduct],
@@ -444,7 +394,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!searchOpen || searchResults.length === 0) return;
-
+    console.log(searchResults);
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setSelectedIndex((prev) => (prev + 1) % searchResults.length);
@@ -467,6 +417,8 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
       proformaProducts: p.proformaProducts.filter((r) => r.Id !== id),
     }));
 
+  // DÜZELTİLDİ: item.id -> item.Id (önceki bug: alan hiç var olmadığından
+  // koşul her zaman true dönüyor, hiçbir satır güncellenmiyordu)
   const updateProductProformaField = (id: number, field: string, value: any) => {
     updatePf((p) => ({
       ...p,
@@ -512,11 +464,23 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
     setSaving(true);
 
     try {
+      // Frontend "proformaProducts" (nested Product) tutuyor, backend
+      // "products" (flat: sadece product_id + parcel) bekliyor.
+      const payload: any = {
+        ...pf,
+        products: pf.proformaProducts.map((pp) => ({
+          product_id: pp.product_id,
+          parcel: pp.parcel,
+        })),
+        conditions: pf.conditions?.map((c) => ({ name: c.name })) ?? [],
+      };
+      delete payload.proformaProducts;
+
       const url = isEdit ? `${baseApi}/api/proforma/edit/${id}` : `${baseApi}/api/proforma/add`;
       const response = await fetch(url, {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
-        body: JSON.stringify(pf),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -630,7 +594,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
               <ClickAwayListener onClickAway={() => setSearchOpen(false)}>
                 <Box sx={{ position: "relative", mb: 3 }}>
                   <TextField
-                    ref={searchInputRef} // Ref doğrudan TextField'a verildi
+                    ref={searchInputRef}
                     size="medium"
                     fullWidth
                     value={searchQuery}
@@ -669,21 +633,10 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                     anchorEl={searchInputRef.current}
                     placement="bottom-start"
                     modifiers={[
-                      {
-                        name: "offset",
-                        options: {
-                          offset: [0, 8], // tam hizada 8px aşağı mesafe
-                        },
-                      },
-                      {
-                        name: "preventOverflow",
-                        options: {
-                          boundary: "window", // Ekran daralsa bile yukarı kaçmasını önler
-                        },
-                      },
+                      { name: "offset", options: { offset: [0, 8] } },
+                      { name: "preventOverflow", options: { boundary: "window" } },
                     ]}
                     style={{
-                      // TextField'ın gerçek piksel genişliği atanır, %100 taşmasını engeller
                       width: searchInputRef.current ? searchInputRef.current.clientWidth : "auto",
                       zIndex: 1300,
                     }}
@@ -722,7 +675,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                             const isSelected = idx === selectedIndex;
                             return (
                               <ListItemButton
-                                key={prod.Id}
+                                key={prod.id}
                                 selected={isSelected}
                                 onClick={() => handleSelectProduct(prod)}
                                 onMouseEnter={() => setSelectedIndex(idx)}
@@ -850,7 +803,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                                 <TextField
                                   type="number" size="small" variant="outlined"
                                   value={item.parcel ?? 0}
-                                  onChange={(e) => updateProductProformaField(item.Id, "parcel", e.target.value)}
+                                  onChange={(e) => updateProductProformaField(item.Id!, "parcel", e.target.value)}
                                   inputProps={{ style: { textAlign: "center" }, min: 1 }}
                                   sx={{ "& .MuiOutlinedInput-input": { py: 0.75, px: 1 } }}
                                 />
@@ -869,7 +822,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                         })}
 
                         <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                          <IconButton size="small" onClick={() => removeProformaProduct(item.Id)} title="Kaldır">
+                          <IconButton size="small" onClick={() => removeProformaProduct(item.Id!)} title="Kaldır">
                             <DeleteOutlineIcon fontSize="small" color="error" />
                           </IconButton>
                         </TableCell>
