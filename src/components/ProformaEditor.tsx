@@ -109,6 +109,8 @@ const COLUMNS: ColumnDef[] = [
 ];
 
 // --- Yardımcı Arama Metotları ---
+// --- Yardımcı Arama Metotları ---
+// --- Yardımcı Arama Metotları ---
 function normalizeTR(str: string): string {
   return str
     .replace(/İ/g, "i").replace(/I/g, "ı").replace(/Ğ/g, "g").replace(/ğ/g, "g")
@@ -118,60 +120,175 @@ function normalizeTR(str: string): string {
     .trim();
 }
 
-function levenshteinDistance(a: string, b: string): number {
-  const matrix: number[][] = [];
-  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+// Damerau-Levenshtein (optimal string alignment) — bitişik iki harfin
+// yer değiştirmesini (transposition) TEK işlem olarak sayar. Klasik
+// Levenshtein "pirz" -> "priz" için 2 işlem (iki değişiklik) sayarken,
+// bu versiyon 1 işlem sayar — kısa kelimelerdeki harf takası
+// hatalarında çok daha doğru bir mesafe verir.
+function damerauLevenshtein(a: string, b: string): number {
+  const al = a.length;
+  const bl = b.length;
+  const d: number[][] = Array.from({ length: al + 1 }, () => new Array(bl + 1).fill(0));
 
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b.charAt(i - 1) === a.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
+  for (let i = 0; i <= al; i++) d[i][0] = i;
+  for (let j = 0; j <= bl; j++) d[0][j] = j;
+
+  for (let i = 1; i <= al; i++) {
+    for (let j = 1; j <= bl; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,       // silme
+        d[i][j - 1] + 1,       // ekleme
+        d[i - 1][j - 1] + cost // değiştirme
+      );
+      if (
+        i > 1 && j > 1 &&
+        a[i - 1] === b[j - 2] &&
+        a[i - 2] === b[j - 1]
+      ) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1); // bitişik harf takası
       }
     }
   }
-  return matrix[b.length][a.length];
+
+  return d[al][bl];
 }
 
+// Bigram (ikili harf grubu) çıkarır — "toprka" -> ["to","op","pr","rk","ka"]
+function bigrams(s: string): string[] {
+  const clean = s.replace(/\s+/g, "");
+  const grams: string[] = [];
+  for (let i = 0; i < clean.length - 1; i++) grams.push(clean.slice(i, i + 2));
+  return grams;
+}
+
+// İki string arasındaki benzerliği 0–1 arası puanlar (Dice katsayısı).
+function diceCoefficient(a: string, b: string): number {
+  if (a === b) return 1;
+  const bigramsA = bigrams(a);
+  const bigramsB = bigrams(b);
+  if (bigramsA.length === 0 || bigramsB.length === 0) return 0;
+
+  const mapB = new Map<string, number>();
+  for (const bg of bigramsB) mapB.set(bg, (mapB.get(bg) ?? 0) + 1);
+
+  let matches = 0;
+  for (const bg of bigramsA) {
+    const count = mapB.get(bg) ?? 0;
+    if (count > 0) {
+      matches++;
+      mapB.set(bg, count - 1);
+    }
+  }
+  return (2 * matches) / (bigramsA.length + bigramsB.length);
+}
+
+// Karakter çoklu-kümesi (multiset) benzerliği — SIRAYI HİÇ ÖNEMSEMEZ.
+// "pirz" ve "priz" tam olarak aynı harflere sahip (p,i,r,z), sadece
+// sırası farklı; bigram bu durumda 0 benzerlik verirken (bitişik harf
+// takası tüm ikili grupları değiştirdiği için), bu yöntem %100 verir.
+// Özellikle kısa kelimelerdeki (4-6 harf) harf takası yazım hatalarını
+// yakalamak için kritik.
+function charMultisetSimilarity(a: string, b: string): number {
+  if (a.length === 0 || b.length === 0) return 0;
+  const countsA = new Map<string, number>();
+  for (const ch of a) countsA.set(ch, (countsA.get(ch) ?? 0) + 1);
+
+  let common = 0;
+  for (const ch of b) {
+    const c = countsA.get(ch) ?? 0;
+    if (c > 0) {
+      common++;
+      countsA.set(ch, c - 1);
+    }
+  }
+  return (2 * common) / (a.length + b.length);
+}
+
+/**
+ * GENİŞ ARAMA — kasıtlı olarak toleranslı tutulmuştur, daraltılmamalı.
+ *
+ * Birden fazla stratejiyi birlikte kullanır:
+ * 1) Tam alt-dize eşleşmesi (isim veya kodun HERHANGİ bir yerinde).
+ * 2) Kelime bazlı eşleşme — sorgudaki her kelime, üründeki herhangi bir
+ *    kelimenin içinde geçiyorsa.
+ * 3) Bigram (ikili harf) benzerliği — eksik/fazla harf yazım hatalarını
+ *    yakalar ("mtr" -> "metre").
+ * 4) Karakter çoklu-kümesi benzerliği — SIRA ÖNEMSİZ, harf takası
+ *    hatalarını yakalar ("pirz" -> "priz").
+ * 5) Damerau-Levenshtein mesafesi — bitişik harf takasını tek işlem
+ *    sayan, kısa kelimelerde en isabetli klasik mesafe ölçüsü.
+ *
+ * Her ürün adındaki kelimeler tek tek de karşılaştırılır ("4'lü
+ * Topraklı Grup Priz (Klemensli)" gibi çok kelimeli isimlerde "priz"
+ * sorgusu sadece o kelimeyle kıyaslanır, diğer kelimeler skoru
+ * sulandırmaz).
+ */
 function fuzzySearchProducts(products: Product[], query: string): Product[] {
   const normQuery = normalizeTR(query);
   if (!normQuery) return [];
 
   const queryTokens = normQuery.split(/\s+/).filter(Boolean);
 
+  function wordScore(query: string, word: string): number {
+    if (!word) return 0;
+    if (word.includes(query) || query.includes(word)) return 1;
+
+    const dice = diceCoefficient(query, word);
+    const multiset = charMultisetSimilarity(query, word);
+
+    const dist = damerauLevenshtein(query, word);
+    const maxLen = Math.max(query.length, word.length);
+    const damerauSim = maxLen > 0 ? 1 - dist / maxLen : 0;
+
+    return Math.max(dice, multiset, damerauSim);
+  }
+
   const scored = products.map((product) => {
     const normName = normalizeTR(product.name || "");
     const normCode = normalizeTR(product.code || "");
+    const nameTokens = normName.split(/\s+/).filter(Boolean);
 
-    if (normCode.includes(normQuery) || normName.includes(normQuery)) {
-      return { product, score: 100 };
+    let score = 0;
+
+    // 1) Tam alt-dize eşleşmesi
+    if (normName.includes(normQuery) || normCode.includes(normQuery)) {
+      score = Math.max(score, 100);
     }
 
+    // 2) Kelime bazlı: sorgudaki her token, isimdeki herhangi bir
+    // kelimenin içinde geçiyor mu
     let tokenMatches = 0;
     queryTokens.forEach((token) => {
       if (normName.includes(token) || normCode.includes(token)) tokenMatches++;
     });
-
     if (tokenMatches > 0) {
-      return { product, score: 70 + (tokenMatches / queryTokens.length) * 20 };
+      score = Math.max(score, 70 + (tokenMatches / queryTokens.length) * 20);
     }
 
-    const distName = levenshteinDistance(normQuery, normName.slice(0, normQuery.length + 3));
-    if (distName <= 2) {
-      return { product, score: 50 - distName * 5 };
+    // 3-5) Her sorgu kelimesini, üründeki her kelimeyle ayrı ayrı
+    // karşılaştır (bigram + multiset + Damerau-Levenshtein), en iyi
+    // eşleşen kelime çiftini al.
+    let bestWordMatch = 0;
+    for (const qToken of queryTokens) {
+      for (const nToken of nameTokens) {
+        bestWordMatch = Math.max(bestWordMatch, wordScore(qToken, nToken));
+      }
+      // Kod ile de karşılaştır (örn. "UR001" gibi kısa kodlarda typo)
+      bestWordMatch = Math.max(bestWordMatch, wordScore(qToken, normCode));
     }
+    score = Math.max(score, bestWordMatch * 85);
 
-    return { product, score: 0 };
+    // Tüm sorgu ile tüm isim arasında da aynı üçlü kontrol (çok
+    // kelimeli sorgularda bütün ismi tek parça yazan kullanıcılar için)
+    score = Math.max(score, wordScore(normQuery, normName) * 80);
+
+    return { product, score };
   });
 
+  // Eşik düşük tutuldu — arama kasıtlı olarak GENİŞ.
   return scored
-    .filter((item) => item.score > 25)
+    .filter((item) => item.score > 15)
     .sort((a, b) => b.score - a.score)
     .map((item) => item.product);
 }
@@ -288,10 +405,11 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
   const showColumn = (key: ColumnKey) => setColOpen((s) => ({ ...s, [key]: true }));
 
   // Arama sonucunun sadece harf girildiğinde tetiklenmesi
+  // Arama sonucunun sadece harf girildiğinde tetiklenmesi ve maks 5 ürün dönmesi
   const searchResults = useMemo(() => {
     const query = searchQuery.trim();
     if (!query) return []; // Harf yoksa boş dizi döner
-    return fuzzySearchProducts(dbProducts, query).slice(0, 10);
+    return fuzzySearchProducts(dbProducts, query).slice(0, 5); // 10 yerine 5 yapıldı
   }, [searchQuery, dbProducts]);
 
   // Menünün açılma koşulu: searchOpen true olmalı VE arama metni 0'dan büyük olmalı
@@ -512,18 +630,16 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
               <ClickAwayListener onClickAway={() => setSearchOpen(false)}>
                 <Box sx={{ position: "relative", mb: 3 }}>
                   <TextField
-                    inputRef={searchInputRef}
+                    ref={searchInputRef} // Ref doğrudan TextField'a verildi
                     size="medium"
                     fullWidth
                     value={searchQuery}
                     onFocus={() => {
-                      // Tıklandığında sadece metin varsa menüyü aç
                       if (searchQuery.trim().length > 0) setSearchOpen(true);
                     }}
                     onChange={(e) => {
                       const val = e.target.value;
                       setSearchQuery(val);
-                      // Sadece en az 1 karakter yazıldığında menüyü aç
                       setSearchOpen(val.trim().length > 0);
                       setSelectedIndex(0);
                     }}
@@ -538,7 +654,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                     }}
                     sx={{
                       "& .MuiOutlinedInput-root": {
-                        borderRadius: "16px", // Sabit köşe kavisleri
+                        borderRadius: "16px",
                         bgcolor: "#FAF9F5",
                         transition: "all 0.2s ease-in-out",
                         "&.Mui-focused": {
@@ -549,19 +665,26 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                   />
 
                   <Popper
-                    open={isMenuOpen} // Sadece harf/kelime girildiğinde açık olur
+                    open={isMenuOpen}
                     anchorEl={searchInputRef.current}
                     placement="bottom-start"
                     modifiers={[
                       {
                         name: "offset",
                         options: {
-                          offset: [0, 8], // Input ile menü arasına 8px boşluk
+                          offset: [0, 8], // tam hizada 8px aşağı mesafe
+                        },
+                      },
+                      {
+                        name: "preventOverflow",
+                        options: {
+                          boundary: "window", // Ekran daralsa bile yukarı kaçmasını önler
                         },
                       },
                     ]}
                     style={{
-                      width: searchInputRef.current?.clientWidth,
+                      // TextField'ın gerçek piksel genişliği atanır, %100 taşmasını engeller
+                      width: searchInputRef.current ? searchInputRef.current.clientWidth : "auto",
                       zIndex: 1300,
                     }}
                   >
@@ -574,23 +697,25 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                         overflow: "hidden",
                         bgcolor: "#FFFFFF",
                         boxShadow: "0px 10px 30px rgba(0, 0, 0, 0.12)",
+                        display: "flex",
+                        flexDirection: "column",
                       }}
                     >
-                      <Box sx={{ p: 1.5, px: 2, bgcolor: "#F5F5F7" }}>
+                      <Box sx={{ p: 1, px: 2, bgcolor: "#F5F5F7", borderBottom: "1px solid", borderColor: "divider" }}>
                         <Typography
                           variant="caption"
                           fontWeight={600}
                           color="text.secondary"
-                          sx={{ letterSpacing: 0.5 }}
+                          sx={{ letterSpacing: 0.5, fontSize: 11 }}
                         >
                           ARAMA SONUÇLARI
                         </Typography>
                       </Box>
 
-                      <List disablePadding sx={{ maxHeight: 360, overflowY: "auto" }}>
+                      <List disablePadding sx={{ maxHeight: 300, overflowY: "auto" }}>
                         {searchResults.length === 0 ? (
-                          <Box sx={{ p: 3, textAlign: "center", color: "text.secondary" }}>
-                            <Typography variant="body2">Eşleşen ürün bulunamadı.</Typography>
+                          <Box sx={{ p: 2, textAlign: "center", color: "text.secondary" }}>
+                            <Typography variant="body2" fontSize={13}>Eşleşen ürün bulunamadı.</Typography>
                           </Box>
                         ) : (
                           searchResults.map((prod, idx) => {
@@ -602,40 +727,41 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                                 onClick={() => handleSelectProduct(prod)}
                                 onMouseEnter={() => setSelectedIndex(idx)}
                                 sx={{
-                                  py: 1.2,
-                                  px: 2,
+                                  py: 0.5,
+                                  px: 1.5,
                                   transition: "background-color 0.15s ease",
                                   "&.Mui-selected": { bgcolor: "rgba(0, 113, 227, 0.08)" },
                                   "&:hover": { bgcolor: "rgba(0, 0, 0, 0.04)" },
                                 }}
                               >
-                                <ListItemAvatar>
+                                <ListItemAvatar sx={{ minWidth: 38 }}>
                                   <Avatar
                                     src={resolveImageUrl(prod.image, baseApi)}
                                     variant="rounded"
-                                    sx={{ width: 44, height: 44, bgcolor: "#F2F2F7", borderRadius: "8px" }}
+                                    sx={{ width: 32, height: 32, bgcolor: "#F2F2F7", borderRadius: "6px" }}
                                   >
-                                    <SubtitlesIcon color="action" />
+                                    <SubtitlesIcon sx={{ fontSize: 18 }} color="action" />
                                   </Avatar>
                                 </ListItemAvatar>
                                 <ListItemText
+                                  sx={{ my: 0 }}
                                   primary={
-                                    <Typography variant="body2" fontWeight={600} color="text.primary">
+                                    <Typography variant="body2" fontWeight={600} fontSize={13} color="text.primary">
                                       {prod.name}
                                     </Typography>
                                   }
                                   secondary={
-                                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
-                                      <Chip label={prod.code} size="small" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
+                                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.2 }}>
+                                      <Chip label={prod.code} size="small" variant="outlined" sx={{ height: 16, fontSize: 9, px: 0.5 }} />
                                       {prod.unit && (
-                                        <Typography variant="caption" color="text.secondary">
+                                        <Typography variant="caption" fontSize={11} color="text.secondary">
                                           {tl(prod.unit)}
                                         </Typography>
                                       )}
                                     </Stack>
                                   }
                                 />
-                                <AddIcon fontSize="small" color="action" />
+                                <AddIcon sx={{ fontSize: 18 }} color="action" />
                               </ListItemButton>
                             );
                           })
