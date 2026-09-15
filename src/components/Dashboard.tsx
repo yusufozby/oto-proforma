@@ -22,7 +22,7 @@ import ShareIcon from "@mui/icons-material/Share";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import ChecklistIcon from "@mui/icons-material/Checklist";
 import TuneIcon from "@mui/icons-material/Tune";
-import { detectTripleTrigger, calcTotals, tl } from "../lib/helpers";
+import { detectTripleTrigger, tl } from "../lib/helpers";
 import { downloadProformaPdf, shareProformaPdf } from "../lib/exports";
 import { baseApi, storeGet, storeSet } from "../lib/storage";
 import type { Proforma, Session } from "../types";
@@ -30,6 +30,23 @@ import type { Proforma, Session } from "../types";
 interface DashboardProps {
   session: Session;
   onLogout: () => void;
+}
+
+/**
+ * Backend'den gelen proforma JSON'unda "products" (flat) dizisi vardır.
+ * Toplam fiyat, her ürünün parcel × parcel_inside × unit çarpımının
+ * toplamından iskonto düşülerek hesaplanır.
+ */
+function calcProformaTotal(pf: any): number {
+  const products = Array.isArray(pf?.products) ? pf.products : [];
+  const araTotal = products.reduce((sum: number, p: any) => {
+    const parcel = Number(p?.parcel) || 0;
+    const inside = Number(p?.parcel_inside) || 0;
+    const unit = Number(p?.unit) || 0;
+    return sum + parcel * inside * unit;
+  }, 0);
+  const discount = Number(pf?.discount) || 0;
+  return araTotal - araTotal * (discount / 100);
 }
 
 export default function Dashboard({ session, onLogout }: DashboardProps) {
@@ -73,18 +90,13 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     const q = query.trim().toLowerCase();
     if (!q) return proformas;
     return proformas.filter((p) => {
-      const inBuyer = p.buyer_name!.toLowerCase().includes(q);
-      const inId = p.code!.toLowerCase().includes(q);
+      const inBuyer = (p.buyer_name ?? "").toLowerCase().includes(q);
+      const inId = (p.code ?? "").toLowerCase().includes(q);
       const inProducts = false;
-      // const inProducts = p.products?.some(
-      //   (pr) => pr.name.toLowerCase().includes(q) || pr.code.toLowerCase().includes(q)
-      // );
       return inBuyer || inId || inProducts;
     });
   }, [proformas, query]);
 
-  // Arama değiştiğinde ya da liste değiştiğinde sayfayı başa al — aksi
-  // halde artık var olmayan bir sayfada boş bir tablo görünebilir.
   useEffect(() => {
     setPage(0);
   }, [query, proformas.length]);
@@ -400,7 +412,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               </TableHead>
               <TableBody>
                 {paginated.map((p) => {
-                  const { total } = calcTotals(p);
+                  // ✅ Backend "products" (flat) döndüğü için toplam burada hesaplanır
+                  const total = calcProformaTotal(p);
                   return (
                     <TableRow key={p.id} hover>
                       <TableCell className="mono" sx={{ whiteSpace: "nowrap" }}>{p.code}</TableCell>
@@ -434,7 +447,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               </TableBody>
             </Table>
 
-            {/* Şık pagination alt çubuğu — MUI'nin varsayılan TablePagination'ı yerine */}
+            {/* Şık pagination alt çubuğu */}
             <Stack
               direction={{ xs: "column", sm: "row" }}
               justifyContent="space-between"

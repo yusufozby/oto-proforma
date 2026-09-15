@@ -5,11 +5,11 @@ import type {
   Session,
   Product,
 } from "../types";
-import { calcTotals, tl } from "./helpers";
+import { calcTotals, tl, resolveImageUrl } from "./helpers";
 import { baseApi } from "./storage";
 
 // =========================================================
-// SABİTLER & RENKLER  – referans görsele birebir
+// SAYFA & RENKLER — 2. görsele birebir
 // =========================================================
 
 const PAGE_WIDTH = 210;
@@ -24,25 +24,22 @@ const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
 
 const FONT = "Inter";
 
-// Referans renkleri (turuncu yok)
-const INK: [number, number, number] = [33, 33, 33];
-const TEXT_SECONDARY: [number, number, number] = [120, 120, 120];
-const TEXT_MUTED: [number, number, number] = [160, 160, 160];
+// Renk paleti
+const INK: [number, number, number] = [30, 30, 30];            // koyu siyah başlıklar
+const TEXT_DARK: [number, number, number] = [55, 55, 55];      // tablo değerleri / düz metin
+const TEXT_LABEL: [number, number, number] = [120, 120, 120];  // etiketler (gri)
+const TEXT_MUTED: [number, number, number] = [165, 165, 165];  // footer
+const PINK: [number, number, number] = [244, 164, 164];        // logo karesi / ürün görseli
+const BORDER: [number, number, number] = [215, 215, 215];      // tüm çerçeveler
+const BORDER_SOFT: [number, number, number] = [228, 228, 228]; // iç ayırıcılar
+const HEADER_BG: [number, number, number] = [248, 248, 248];   // tablo başlığı arka planı
 
-const LOGO_PINK: [number, number, number] = [240, 154, 154]; // referanstaki soft pembe
-const SURFACE: [number, number, number] = [255, 255, 255];
-const TABLE_HEADER_BG: [number, number, number] = [248, 248, 248];
-const ROW_ALT_BG: [number, number, number] = [252, 252, 252];
-const DIVIDER: [number, number, number] = [228, 228, 228];
-const CARD_BORDER: [number, number, number] = [220, 220, 220];
-const BOX_BG: [number, number, number] = [255, 255, 255];
-
-const CARD_RADIUS = 5;
-const PRODUCT_ROW_HEIGHT = 10.5;
-const PRODUCT_IMAGE_SIZE = 7;
+const TABLE_ROW_H = 10.5;
+const TABLE_HEADER_H = 8.5;
+const PRODUCT_IMG_SIZE = 7;
 
 // =========================================================
-// FONT & ASSET IMPORTLARI
+// ASSET IMPORTLARI
 // =========================================================
 
 // @ts-ignore
@@ -59,7 +56,7 @@ import MapsIconUrl from "../assets/icons/maps.png?url";
 import CompanyLogoUrl from "../assets/icons/logo.png?url";
 
 const DEFAULT_COMPANY_LOGO =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAgY0hSTQAAeiYAAICEAAD6AAAAgOgAAHUwAADqYAAAOpgAABd1NDZEAAAABGdBTUEAALGPC/xhBQAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAoKADAAQAAAABAAAAoAAAAAC118/4AAAIkUlEQVR4Ae1da1Qb1xl2R5Lgh3Ecx/m4SZw2Ttpme9p023/S3a/t5Kdpf6RpmqZNmrS3p/3R/pGm/dE2bdM0/SftJ333333333333333333/084pS1iAnm4u4s54R/S8A3fmfu/3zpy5I63WsXDh/S0g0AICAi0gINACAi0gINACAi0gINACAi0gINACAi0gI=";
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAgY0hSTQAAeiYAAICEAAD6AAAAgOgAAHUwAADqYAAAOpgAABd1NDZEAAAABGdBTUEAALGPC/xhBQAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAoKADAAQAAAABAAAAoAAAAAC118/4AAAIkUlEQVR4Ae1da1Qb1xl2R5Lgh3Ecx/m4SZw2Ttpme9p023/S3a/t5Kdpf6RpmqZNmrS3p/3R/pGm/dE2bdM0/SftJ333333333333333/084pS1iAnm4u4s54R/S8A3fmfu/3zpy5I63WsXDh/S0g0AICAi0gINACAi0gINACAi0gINACAi0gINACAi0gINACAi0gI=";
 
 // =========================================================
 // GÖRSEL DÖNÜŞTÜRÜCÜ
@@ -130,14 +127,29 @@ async function preloadProductImages(
 ): Promise<Map<number, string>> {
   const map = new Map<number, string>();
   if (!products || !Array.isArray(products)) return map;
-  const baseUrl = baseApi.replace(/\/+$/, "");
+
   await Promise.all(
     products.map(async (row) => {
       const productId = Number(row.product_id);
-      if (!Number.isFinite(productId)) return;
-      void baseUrl;
+      const imagePath = row.Product?.image;
+      if (!Number.isFinite(productId) || !imagePath) return;
+
+      const url = resolveImageUrl(imagePath, baseApi);
+      if (!url) return;
+
+      try {
+        const response = await fetch(url);
+        if (!response.ok) return;
+
+        const blob = await response.blob();
+        const compressed = await compressAndResizeImage(blob, 80, 80, 0.7);
+        map.set(productId, compressed);
+      } catch {
+        // Görsel indirilemedi — pembe yer tutucu kare kullanılacak
+      }
     })
   );
+
   return map;
 }
 
@@ -205,7 +217,7 @@ function setText(
   y: number,
   size = 9,
   bold = false,
-  color: readonly [number, number, number] = INK
+  color: readonly [number, number, number] = TEXT_DARK
 ) {
   pdf.setFont(FONT, bold ? "bold" : "normal");
   pdf.setFontSize(size);
@@ -220,7 +232,7 @@ function drawRightText(
   y: number,
   size = 9,
   bold = false,
-  color: readonly [number, number, number] = INK
+  color: readonly [number, number, number] = TEXT_DARK
 ) {
   pdf.setFont(FONT, bold ? "bold" : "normal");
   pdf.setFontSize(size);
@@ -238,8 +250,8 @@ function drawLine(
   y1: number,
   x2: number,
   y2: number,
-  color: readonly [number, number, number] = DIVIDER,
-  width = 0.3
+  color: readonly [number, number, number] = BORDER_SOFT,
+  width = 0.25
 ) {
   pdf.setDrawColor(...color);
   pdf.setLineWidth(width);
@@ -247,7 +259,7 @@ function drawLine(
 }
 
 // =========================================================
-// HEADER – soft pembe kare + isim sol, PROFORM sağ
+// HEADER  (logo + firma adı + PROFORM başlığı)
 // =========================================================
 
 function drawHeader(
@@ -259,36 +271,48 @@ function drawHeader(
   const x = MARGIN_LEFT;
   const y = MARGIN_TOP;
 
-  // Soft pembe kare (referanstaki gibi, logo resmi yok)
+  // Pembe kare logo
   const logoSize = 12;
-  pdf.setFillColor(...LOGO_PINK);
-  pdf.roundedRect(x, y, logoSize, logoSize, 2.5, 2.5, "F");
+  pdf.setFillColor(...PINK);
+  pdf.roundedRect(x, y, logoSize, logoSize, 2, 2, "F");
 
-  // Firma adı
+  // Firma adı — koyu siyah + bold
   const firmName = safeString(session.firm) || "ASEL Aydınlatma";
-  setText(pdf, firmName, x + logoSize + 4, y + 5.8, 13.5, true, INK);
+  setText(pdf, firmName, x + logoSize + 4, y + 5.8, 13, true, INK);
 
-  // Alt başlık
+  // Alt başlık — gri, bold, küçük
   setText(
     pdf,
     "GRUP PRİZ • GOLYAT • AYDINLATMA",
     x + logoSize + 4,
     y + 11,
-    6.2,
-    false,
-    TEXT_SECONDARY
+    6,
+    true,
+    TEXT_LABEL
   );
 
-  // Sağ taraf
+  // Sağ taraf — PROFORM siyah bold
   const rightX = PAGE_WIDTH - MARGIN_RIGHT;
   drawRightText(pdf, "PROFORM", rightX, y + 5.8, 15, true, INK);
-  drawRightText(pdf, "Fiyat Teklifi by Oto Proforma", rightX, y + 11, 6.2, false, TEXT_SECONDARY);
+  drawRightText(
+    pdf,
+    "Fiyat Teklifi by Oto Proforma",
+    rightX,
+    y + 11,
+    6.2,
+    false,
+    TEXT_LABEL
+  );
 
-  return y + 20;
+  // Alt divider
+  const lineY = y + 16;
+  drawLine(pdf, MARGIN_LEFT, lineY, PAGE_WIDTH - MARGIN_RIGHT, lineY, BORDER, 0.35);
+
+  return lineY + 6;
 }
 
 // =========================================================
-// FİRMA + TEKLİF BİLGİLERİ (kartsız, iki kolon)
+// FİRMA + TEKLİF BİLGİLERİ  (sol 4 satır / sağ 3 satır)
 // =========================================================
 
 function drawCompanyAndOfferInfo(
@@ -298,7 +322,8 @@ function drawCompanyAndOfferInfo(
   startY: number
 ): number {
   const leftX = MARGIN_LEFT;
-  const rightX = PAGE_WIDTH / 2 + 6;
+  const rightX = PAGE_WIDTH / 2 + 8;
+  const labelW = 16;
   let y = startY;
 
   const leftRows: [string, string][] = [
@@ -324,31 +349,29 @@ function drawCompanyAndOfferInfo(
     ],
   ];
 
-  const labelW = 16;
-
   leftRows.forEach(([label, value]) => {
-    setText(pdf, label, leftX, y, 7.2, false, TEXT_SECONDARY);
+    setText(pdf, label, leftX, y, 7.2, true, TEXT_LABEL);
     const lines = splitText(pdf, value, 78);
-    setText(pdf, lines[0] || "", leftX + labelW, y, 7.2, false, INK);
+    setText(pdf, lines[0] || "", leftX + labelW, y, 7.2, false, TEXT_DARK);
     if (lines.length > 1) {
       y += 3.6;
-      setText(pdf, lines[1], leftX + labelW, y, 7.2, false, INK);
+      setText(pdf, lines[1], leftX + labelW, y, 7.2, false, TEXT_DARK);
     }
     y += 4.4;
   });
 
   let ry = startY;
   rightRows.forEach(([label, value]) => {
-    setText(pdf, label, rightX, ry, 7.2, false, TEXT_SECONDARY);
-    setText(pdf, value, rightX + 20, ry, 7.2, true, INK);
+    setText(pdf, label, rightX, ry, 7.2, true, TEXT_LABEL);
+    setText(pdf, value, rightX + 22, ry, 7.2, false, TEXT_DARK);
     ry += 4.4;
   });
 
-  return Math.max(y, ry) + 5;
+  return Math.max(y, ry) + 4;
 }
 
 // =========================================================
-// ÜRÜN TABLO SÜTUNLARI
+// ÜRÜN TABLOSU
 // =========================================================
 
 type ProductColumn = {
@@ -388,25 +411,31 @@ function getProductValue(
   index: number,
   key: ProductColumn["key"]
 ): string {
+  const product = row.Product;
+  const parcelCount = Number(row.parcel) || 0;
+  const insideCount = Number(product?.parcel_inside) || 0;
+  const totalAdet = parcelCount * insideCount;
+  const unitPrice = Number(product?.unit) || 0;
+
   switch (key) {
     case "no":
       return String(index + 1).padStart(2, "0");
     case "kod":
-      return safeString(row.product_id);
+      return safeString(product?.code);
     case "isim":
-      return "";
+      return safeString(product?.name);
     case "barkod":
-      return "";
+      return safeString(product?.gtype);
     case "koliIci":
-      return "";
+      return safeString(product?.parcel_inside);
     case "koli":
       return safeString(row.parcel);
     case "totalAdet":
-      return safeString(row.parcel);
+      return String(totalAdet);
     case "birim":
-      return "";
+      return tl(unitPrice);
     case "total":
-      return "";
+      return tl(totalAdet * unitPrice);
     default:
       return "";
   }
@@ -415,7 +444,7 @@ function getProductValue(
 function columnTextX(col: ProductColumn, colStartX: number): number {
   if (col.align === "center") return colStartX + col.width / 2;
   if (col.align === "right") return colStartX + col.width - 1.5;
-  return colStartX + 1.2;
+  return colStartX + 1.5;
 }
 
 function addProductImage(
@@ -433,9 +462,8 @@ function addProductImage(
       // fallback
     }
   }
-  // Referanstaki soft pembe kare
-  pdf.setFillColor(...LOGO_PINK);
-  pdf.roundedRect(x, y, size, size, 1.3, 1.3, "F");
+  pdf.setFillColor(...PINK);
+  pdf.roundedRect(x, y, size, size, 1.2, 1.2, "F");
 }
 
 function drawProductTableHeader(
@@ -444,17 +472,17 @@ function drawProductTableHeader(
   y: number,
   columns: ProductColumn[]
 ): number {
-  const headerHeight = 8.5;
+  const headerHeight = TABLE_HEADER_H;
   const tableWidth = CONTENT_WIDTH;
 
-  pdf.setFillColor(...TABLE_HEADER_BG);
+  pdf.setFillColor(...HEADER_BG);
   pdf.rect(x, y, tableWidth, headerHeight, "F");
 
-  drawLine(pdf, x, y, x + tableWidth, y, DIVIDER, 0.25);
+  drawLine(pdf, x, y, x + tableWidth, y, BORDER, 0.35);
 
   pdf.setFont(FONT, "bold");
   pdf.setFontSize(5.5);
-  pdf.setTextColor(...TEXT_SECONDARY);
+  pdf.setTextColor(...TEXT_LABEL);
 
   let currentX = x;
   for (const column of columns) {
@@ -472,7 +500,15 @@ function drawProductTableHeader(
     currentX += column.width;
   }
 
-  drawLine(pdf, x, y + headerHeight, x + tableWidth, y + headerHeight, DIVIDER, 0.3);
+  drawLine(
+    pdf,
+    x,
+    y + headerHeight,
+    x + tableWidth,
+    y + headerHeight,
+    BORDER,
+    0.35
+  );
   return headerHeight;
 }
 
@@ -490,7 +526,7 @@ function drawProductRow(
   const tableWidth = CONTENT_WIDTH;
 
   if (alternate) {
-    pdf.setFillColor(...ROW_ALT_BG);
+    pdf.setFillColor(...HEADER_BG);
     pdf.rect(x, y, tableWidth, rowHeight, "F");
   }
 
@@ -499,7 +535,7 @@ function drawProductRow(
 
   for (const column of columns) {
     if (column.key === "image") {
-      const size = PRODUCT_IMAGE_SIZE;
+      const size = PRODUCT_IMG_SIZE;
       const imgX = currentX + (column.width - size) / 2;
       const imgY = y + (rowHeight - size) / 2;
       addProductImage(pdf, imageMap.get(productId), imgX, imgY, size);
@@ -510,7 +546,7 @@ function drawProductRow(
     const value = getProductValue(row, index, column.key);
     pdf.setFont(FONT, column.key === "total" ? "bold" : "normal");
     pdf.setFontSize(6);
-    pdf.setTextColor(...INK);
+    pdf.setTextColor(...TEXT_DARK);
 
     const lines = splitText(pdf, value, column.width - 2);
     const visibleLines = lines.slice(0, 2);
@@ -528,7 +564,15 @@ function drawProductRow(
     currentX += column.width;
   }
 
-  drawLine(pdf, x, y + rowHeight, x + tableWidth, y + rowHeight, DIVIDER, 0.2);
+  drawLine(
+    pdf,
+    x,
+    y + rowHeight,
+    x + tableWidth,
+    y + rowHeight,
+    BORDER_SOFT,
+    0.2
+  );
   return rowHeight;
 }
 
@@ -539,7 +583,7 @@ async function drawProductTable(
 ): Promise<number> {
   const columns = getProductColumns();
   const tableWidth = CONTENT_WIDTH;
-  const rowHeight = PRODUCT_ROW_HEIGHT;
+  const rowHeight = TABLE_ROW_H;
 
   const products: ProductProforma[] = (pf as any).products || [];
   const imageMap = await preloadProductImages(products);
@@ -551,8 +595,16 @@ async function drawProductTable(
 
   let index = 0;
   while (index < products.length) {
-    if (currentY + rowHeight > PAGE_HEIGHT - MARGIN_BOTTOM - 58) {
-      drawLine(pdf, MARGIN_LEFT, currentY, MARGIN_LEFT + tableWidth, currentY, DIVIDER, 0.3);
+    if (currentY + rowHeight > PAGE_HEIGHT - MARGIN_BOTTOM - 62) {
+      drawLine(
+        pdf,
+        MARGIN_LEFT,
+        currentY,
+        MARGIN_LEFT + tableWidth,
+        currentY,
+        BORDER,
+        0.35
+      );
       pdf.addPage();
       currentY = MARGIN_TOP;
       const h = drawProductTableHeader(pdf, MARGIN_LEFT, currentY, columns);
@@ -575,12 +627,20 @@ async function drawProductTable(
     index += 1;
   }
 
-  drawLine(pdf, MARGIN_LEFT, currentY, MARGIN_LEFT + tableWidth, currentY, DIVIDER, 0.3);
-  return currentY + 7;
+  drawLine(
+    pdf,
+    MARGIN_LEFT,
+    currentY,
+    MARGIN_LEFT + tableWidth,
+    currentY,
+    BORDER,
+    0.35
+  );
+  return currentY + 8;
 }
 
 // =========================================================
-// ŞARTLAR + TOPLAMLAR (yan yana, yumuşak kenarlı kutular)
+// ŞARTLAR + TOPLAMLAR
 // =========================================================
 
 function drawConditionsAndTotals(
@@ -588,8 +648,8 @@ function drawConditionsAndTotals(
   pf: Proforma,
   startY: number
 ): number {
-  const gap = 7;
-  const leftW = CONTENT_WIDTH * 0.58;
+  const gap = 8;
+  const leftW = CONTENT_WIDTH * 0.56;
   const rightW = CONTENT_WIDTH - leftW - gap;
   const leftX = MARGIN_LEFT;
   const rightX = MARGIN_LEFT + leftW + gap;
@@ -597,78 +657,94 @@ function drawConditionsAndTotals(
   const conditions = pf.conditions || [];
   const conditionLines: string[] = [];
   for (const condition of conditions) {
-    const lines = splitText(pdf, `• ${condition.name}`, leftW - 10);
+    const lines = splitText(pdf, `• ${condition.name}`, leftW - 12);
     conditionLines.push(...lines);
   }
 
-  const boxH = Math.max(24, 8 + conditionLines.length * 4.5 + 5);
+  // Toplamlar kutusu 3 satır × ~11mm + üst/alt padding = ~48mm
+  const totalsMinH = 48;
+  const conditionsH = 12 + conditionLines.length * 4.5 + 6;
+  const boxH = Math.max(totalsMinH, conditionsH);
 
-  // Sol kutu – Şartlar
-  pdf.setDrawColor(...CARD_BORDER);
+  // ---- Sol kutu: Şartlar ----
+  pdf.setDrawColor(...BORDER);
   pdf.setLineWidth(0.4);
-  pdf.setFillColor(...BOX_BG);
-  pdf.roundedRect(leftX, startY, leftW, boxH, CARD_RADIUS, CARD_RADIUS, "FD");
+  pdf.setFillColor(255, 255, 255);
+  pdf.roundedRect(leftX, startY, leftW, boxH, 4, 4, "FD");
 
-  setText(pdf, "Şartlar ve Koşullar", leftX + 5, startY + 6, 7.5, true, INK);
+  setText(pdf, "Şartlar ve Koşullar", leftX + 6, startY + 8, 8, true, TEXT_LABEL);
 
-  let cy = startY + 11;
+  let cy = startY + 15;
   pdf.setFont(FONT, "normal");
-  pdf.setFontSize(6.8);
-  pdf.setTextColor(...INK);
+  pdf.setFontSize(7);
+  pdf.setTextColor(...TEXT_DARK);
   for (const line of conditionLines) {
-    pdf.text(line, leftX + 5, cy);
-    cy += 4.5;
+    pdf.text(line, leftX + 6, cy);
+    cy += 4.6;
   }
 
-  // Sağ kutu – Toplamlar
-  pdf.setDrawColor(...CARD_BORDER);
+  // ---- Sağ kutu: Toplamlar ----
+  pdf.setDrawColor(...BORDER);
   pdf.setLineWidth(0.4);
-  pdf.setFillColor(...BOX_BG);
-  pdf.roundedRect(rightX, startY, rightW, boxH, CARD_RADIUS, CARD_RADIUS, "FD");
+  pdf.setFillColor(255, 255, 255);
+  pdf.roundedRect(rightX, startY, rightW, boxH, 4, 4, "FD");
 
   const { araTotal, total } = calcTotals(pf);
   const kdvAmount = araTotal * 0.2;
 
-  const rows: [string, string, boolean][] = [
-    ["Ara Toplam", tl(araTotal), false],
-    ["KDV (%20)", tl(kdvAmount), false],
-    ["Toplam", tl(total), true],
+  const fmt = (n: number) =>
+    n.toLocaleString("tr-TR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  const padX = 7;
+  const padTop = 8;
+  const padBottom = 8;
+  const rowH = (boxH - padTop - padBottom) / 3;
+
+  const rows: { label: string; value: string; isTotal: boolean }[] = [
+    { label: "Ara Toplam", value: fmt(araTotal), isTotal: false },
+    { label: "KDV (%20)", value: fmt(kdvAmount), isTotal: false },
+    { label: "Toplam", value: fmt(total), isTotal: true },
   ];
 
-  let ty = startY + 5;
-  const rowH = (boxH - 4) / 3;
+  rows.forEach((row, idx) => {
+    const rowTop = startY + padTop + idx * rowH;
+    const baselineY = rowTop + rowH / 2 + 1.5;
 
-  rows.forEach(([label, value, isTotal], idx) => {
     setText(
       pdf,
-      label,
-      rightX + 5,
-      ty + rowH / 2 + 1.2,
-      isTotal ? 8 : 7,
+      row.label,
+      rightX + padX,
+      baselineY,
+      row.isTotal ? 9.5 : 8.5,
       true,
-      isTotal ? INK : TEXT_SECONDARY
+      row.isTotal ? INK : TEXT_LABEL
     );
+
     drawRightText(
       pdf,
-      value,
-      rightX + rightW - 5,
-      ty + rowH / 2 + 1.2,
-      isTotal ? 9 : 7.8,
-      isTotal,
-      INK
+      row.value,
+      rightX + rightW - padX,
+      baselineY,
+      row.isTotal ? 11 : 9.5,
+      row.isTotal,
+      row.isTotal ? INK : TEXT_DARK
     );
+
     if (idx < rows.length - 1) {
+      const lineY = rowTop + rowH;
       drawLine(
         pdf,
-        rightX + 4,
-        ty + rowH,
-        rightX + rightW - 4,
-        ty + rowH,
-        DIVIDER,
-        0.25
+        rightX + padX,
+        lineY,
+        rightX + rightW - padX,
+        lineY,
+        BORDER,
+        0.3
       );
     }
-    ty += rowH;
   });
 
   return startY + boxH + 8;
@@ -685,38 +761,76 @@ function drawPaymentDetails(
 ): number {
   const x = MARGIN_LEFT;
   const w = CONTENT_WIDTH;
-  const headerH = 7;
-  const rowH = 8.5;
+  const headerH = 8;
+  const rowH = 10;
 
-  // Başlık
-  pdf.setFillColor(...TABLE_HEADER_BG);
+  // Başlık bar (hafif gri)
+  pdf.setFillColor(...HEADER_BG);
   pdf.rect(x, startY, w, headerH, "F");
-  setText(pdf, "Ödeme Detayları", x + 4, startY + 4.8, 7.5, true, INK);
+
+  // Başlık metni — ortada, baseline offset ile tam ortalanmış
+  pdf.setFont(FONT, "bold");
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(...TEXT_LABEL);
+  // Başlık baseline
+  const headerBaseline = startY + headerH / 2 + 1.4;  // ← 0.9 → 1.4
+
+  // Satır 1 baseline         // ← 0.9 → 1.4 // ← düzeltildi
+  pdf.text("Ödeme Detayları", x + w / 2, headerBaseline, { align: "center" });
 
   // Dış çerçeve
-  pdf.setDrawColor(...CARD_BORDER);
-  pdf.setLineWidth(0.35);
+  pdf.setDrawColor(...BORDER);
+  pdf.setLineWidth(0.4);
   pdf.rect(x, startY, w, headerH + rowH * 2, "S");
 
-  // Satır 1
-  let ry = startY + headerH;
-  drawLine(pdf, x, ry, x + w, ry, DIVIDER, 0.25);
+  // Başlık alt çizgi
+  drawLine(pdf, x, startY + headerH, x + w, startY + headerH, BORDER, 0.35);
 
-  const col1 = 18;
-  setText(pdf, "Unvan", x + 4, ry + 5.5, 6.8, false, TEXT_SECONDARY);
-  setText(pdf, safeString(pf.pay_title), x + col1, ry + 5.5, 7, false, INK);
+  // Orta dikey divider — sadece 1. satır boyunca
+  const midX = x + w * 0.55;
+  drawLine(
+    pdf,
+    midX,
+    startY + headerH,
+    midX,
+    startY + headerH + rowH,
+    BORDER_SOFT,
+    0.3
+  );
 
-  const midX = x + w * 0.52;
-  setText(pdf, "Unvan", midX, ry + 5.5, 6.8, false, TEXT_SECONDARY);
-  setText(pdf, safeString(pf.bank), midX + col1, ry + 5.5, 7, false, INK);
+  // ----- Satır 1 (dikey olarak tam ortalanmış) -----
+  const r1Top = startY + headerH;
+  const r1Baseline = r1Top + rowH / 2 + 1.4;  // ← 1.8 yerine 0.9
 
-  // Satır 2
-  ry += rowH;
-  drawLine(pdf, x, ry, x + w, ry, DIVIDER, 0.25);
-  setText(pdf, "IBAN", x + 4, ry + 5.5, 6.8, false, TEXT_SECONDARY);
-  setText(pdf, safeString(pf.iban), x + col1, ry + 5.5, 7, false, INK);
+  // Sol: Unvan
+  setText(pdf, "Unvan", x + 5, r1Baseline - 0.2, 7, true, TEXT_LABEL);
+  setText(pdf, safeString(pf.pay_title), x + 22, r1Baseline - 0.2, 7.2, false, TEXT_DARK);
 
-  return startY + headerH + rowH * 2 + 6;
+  // Sağ: Banka
+  setText(pdf, "Banka", midX + 5, r1Baseline - 0.2, 7, true, TEXT_LABEL);
+  setText(pdf, "Yapı Kredi", midX + 22, r1Baseline - 0.2, 7.2, false, TEXT_DARK);
+
+  // Satır 1 alt yatay çizgi
+  drawLine(
+    pdf,
+    x,
+    r1Top + rowH,
+    x + w,
+    r1Top + rowH,
+    BORDER_SOFT,
+    0.3
+  );
+
+  // ----- Satır 2 (IBAN) — dikey çizgi YOK -----
+  const r2Top = r1Top + rowH;   // ← 0.9 → 1.4
+
+  // Satır 2 baseline
+  const r2Baseline = r2Top + rowH / 2 + 1.4;          // ← 0.9 → 1.4 // ← 1.8 yerine 0.9
+
+  setText(pdf, "IBAN", x + 5, r2Baseline, 7, true, TEXT_LABEL);
+  setText(pdf, safeString(pf.iban), x + 22, r2Baseline, 7.2, false, TEXT_DARK);
+
+  return startY + headerH + rowH * 2 + 8;
 }
 
 // =========================================================
@@ -735,7 +849,7 @@ function drawFooter(pdf: jsPDF, pf: Proforma) {
       y - 3.5,
       PAGE_WIDTH - MARGIN_RIGHT,
       y - 3.5,
-      DIVIDER,
+      BORDER_SOFT,
       0.3
     );
 
@@ -782,14 +896,14 @@ async function createProformaPdf(
   y = drawCompanyAndOfferInfo(pdf, pf, session, y);
   y = await drawProductTable(pdf, pf, y);
 
-  if (y + 55 > PAGE_HEIGHT - MARGIN_BOTTOM) {
+  if (y + 60 > PAGE_HEIGHT - MARGIN_BOTTOM) {
     pdf.addPage();
     y = MARGIN_TOP;
   }
 
   y = drawConditionsAndTotals(pdf, pf, y);
 
-  if (y + 28 > PAGE_HEIGHT - MARGIN_BOTTOM) {
+  if (y + 30 > PAGE_HEIGHT - MARGIN_BOTTOM) {
     pdf.addPage();
     y = MARGIN_TOP;
   }

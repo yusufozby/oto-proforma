@@ -67,7 +67,7 @@ export interface Proforma {
   bank?: string;
   iban?: string;
 
-  discount: number;
+  discount?: number;
 
   proformaProducts: ProductProforma[];
 

@@ -251,7 +251,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: "success" | "error" }>({
     open: false, message: "", severity: "success",
   });
-
+  const [hasIskonto, setHasIskonto] = useState(false)
   useEffect(() => {
     (async () => {
       try {
@@ -316,6 +316,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
             conditions: json.conditions ?? [],
             proformaProducts: mappedProformaProducts,
           });
+          setHasIskonto(json.discount > 0);
         } catch {
           if (!cancelled) setNotFound(true);
         }
@@ -323,7 +324,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
         if (!cancelled) {
           setPf({
             conditions: [],
-            discount: 0,
+            // discount alanı yok → başlangıçta "İskonto Ekle" butonu görünür
             proformaProducts: [],
             user_id: session.role === "admin" ? 1 : 2,
           });
@@ -459,6 +460,32 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
     }
   };
 
+  // Toplamlar — ürünler tablosunun altında gösterilecek
+  const totals = useMemo(() => {
+    if (!pf) return { araTotal: 0, iskontoAmount: 0, total: 0, discountRate: 0, iskontoVar: false };
+    const araTotal = pf.proformaProducts.reduce((sum, item) => {
+      const p = item.Product;
+      const parcelCount = Number(item.parcel) || 0;
+      const insideCount = Number(p?.parcel_inside) || 0;
+      const unitPrice = Number(p?.unit) || 0;
+      return sum + parcelCount * insideCount * unitPrice;
+    }, 0);
+
+    // "" veya undefined/null → oran 0 kabul edilir
+    const discountRate =
+      !pf.discount
+        ? 0
+        : Number(pf.discount) || 0;
+
+    // ✅ Sadece undefined / null "kapalı"dır. "" ve 0 "açık"tır.
+    const iskontoVar = hasIskonto
+
+    const iskontoAmount = araTotal * (discountRate / 100);
+    const total = araTotal - iskontoAmount;
+
+    return { araTotal, iskontoAmount, total, discountRate, iskontoVar };
+  }, [pf]);
+
   const handleSave = async () => {
     if (!pf) return;
     setSaving(true);
@@ -473,6 +500,15 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
           parcel: pp.parcel,
         })),
         conditions: pf.conditions?.map((c) => ({ name: c.name })) ?? [],
+        // Ödeme bilgileri + iskonto
+        pay_title: pf.pay_title ?? "",
+        bank: pf.bank ?? "",
+        iban: pf.iban ?? "",
+        // İskonto: "" veya undefined/null → 0, aksi halde Number
+        discount:
+          !pf.discount
+            ? 0
+            : Number(pf.discount) || 0,
       };
       delete payload.proformaProducts;
 
@@ -847,6 +883,256 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                   />
                 )}
               </TableContainer>
+
+              {/* ===== ŞIK TOPLAMLAR KARTI ===== */}
+              {pf.proformaProducts.length > 0 && (
+                <Box
+                  sx={{
+                    mt: 4,
+                    display: "flex",
+                    justifyContent: "flex-end",
+                  }}
+                >
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      position: "relative",
+                      minWidth: 400,
+                      borderRadius: 3,
+                      overflow: "hidden",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      bgcolor: "#FFFFFF",
+                      boxShadow: "0 4px 24px rgba(0, 0, 0, 0.06)",
+                    }}
+                  >
+                    {/* Üst gradient accent şerit — primary color tonlarında */}
+                    <Box
+                      sx={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: 4,
+                        background: "linear-gradient(90deg, primary.light 0%, primary.main 50%, primary.dark 100%)",
+                      }}
+                    />
+
+                    <Box sx={{ p: 3, pt: 3.5 }}>
+                      <Stack spacing={2}>
+                        {/* Ara Toplam */}
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: "text.secondary",
+                              fontWeight: 500,
+                              letterSpacing: 0.2,
+                            }}
+                          >
+                            Ara Toplam
+                          </Typography>
+                          <Typography
+                            variant="body1"
+                            sx={{
+                              fontWeight: 600,
+                              fontVariantNumeric: "tabular-nums",
+                              color: "text.primary",
+                            }}
+                          >
+                            {tl(totals.araTotal)}
+                          </Typography>
+                        </Stack>
+
+                        {/* İskonto satırı — varsa inline input, yoksa "İskonto Ekle" butonu */}
+                        {totals.iskontoVar ? (
+                          <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Stack direction="row" alignItems="center" spacing={1}>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  color: "text.secondary",
+                                  fontWeight: 500,
+                                  letterSpacing: 0.2,
+                                }}
+                              >
+                                İskonto
+                              </Typography>
+
+                              {/* Küçük, şık oran input'u */}
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 0.5,
+                                  px: 1,
+                                  py: 0.25,
+                                  borderRadius: 1.5,
+                                  bgcolor: "action.hover",
+                                  border: "1px solid",
+                                  borderColor: "divider",
+                                }}
+                              >
+                                <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                                  %
+                                </Typography>
+                                <TextField
+                                  type="number"
+                                  variant="standard"
+                                  autoFocus
+                                  value={
+                                    pf.discount === undefined || pf.discount === null
+                                      ? ""
+                                      : String(pf.discount)
+                                  }
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+
+                                    // Boş bırakıldı → state'te "" olarak tut (input boş kalır)
+                                    if (raw === "") {
+                                      update(["discount"], "");
+                                      return;
+                                    }
+
+                                    let num = Number(raw);
+                                    if (!Number.isFinite(num)) return;
+
+                                    // Clamp: 0–100
+                                    if (num < 0) num = 0;
+                                    if (num > 100) num = 100;
+
+                                    update(["discount"], num);
+                                  }}
+                                  inputProps={{
+                                    min: 0,
+                                    max: 100,
+                                    step: 0.1,
+                                    style: {
+                                      textAlign: "center",
+                                      padding: 0,
+                                      width: 36,
+                                      fontSize: 13,
+                                      fontWeight: 600,
+                                      color: "text.primary",
+                                      fontVariantNumeric: "tabular-nums",
+                                    },
+                                  }}
+                                  sx={{
+                                    width: 36,
+                                    "& .MuiInput-underline:before": { borderBottom: "none" },
+                                    "& .MuiInput-underline:hover:before": { borderBottom: "none !important" },
+                                    "& .MuiInput-underline:after": { borderBottom: "none" },
+                                    "& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button": {
+                                      WebkitAppearance: "none",
+                                      margin: 0,
+                                    },
+                                    "& input[type=number]": { MozAppearance: "textfield" },
+                                  }}
+                                />
+                              </Box>
+
+                              <IconButton
+                                size="small"
+                                onClick={() => {
+                                  setHasIskonto(false);
+                                  update(["discount"], undefined)
+                                }}
+                                sx={{ p: 0.5 }}
+                                title="İskontoyu kaldır"
+                              >
+                                <DeleteOutlineIcon sx={{ fontSize: 15, color: "text.secondary" }} />
+                              </IconButton>
+                            </Stack>
+                            <Typography
+                              variant="body1"
+                              sx={{
+                                fontWeight: 600,
+                                fontVariantNumeric: "tabular-nums",
+                                color: "text.secondary",
+                              }}
+                            >
+                              − {tl(totals.iskontoAmount)}
+                            </Typography>
+                          </Stack>
+                        ) : (
+                          <Button
+                            size="small"
+                            startIcon={<AddIcon sx={{ fontSize: 16 }} />}
+                            onClick={() => {
+                              setHasIskonto(true);
+                              update(["discount"], "")
+                            }}
+                            sx={{
+                              alignSelf: "flex-start",
+                              textTransform: "none",
+                              fontSize: 12,
+                              color: "text.secondary",
+                              px: 1.5,
+                              py: 0.4,
+                              border: "1px dashed",
+                              borderColor: "divider",
+                              borderRadius: 1.5,
+                              "&:hover": {
+                                color: "primary.main",
+                                borderColor: "primary.main",
+                                bgcolor: "action.hover",
+                              },
+                            }}
+                          >
+                            İskonto Ekle
+                          </Button>
+                        )}
+
+                        {/* Ayırıcı */}
+                        <Box
+                          sx={{
+                            height: 1,
+                            background: "linear-gradient(90deg, transparent 0%, #E0E0E0 50%, transparent 100%)",
+                          }}
+                        />
+
+                        {/* Toplam — primary color gradient */}
+                        <Box
+                          sx={{
+                            mt: 1,
+                            px: 2,
+                            py: 1.5,
+                            borderRadius: 1,
+                            background: (theme) =>
+                              `linear-gradient(135deg, ${theme.palette.primary.light}15 0%, ${theme.palette.primary.main}20 100%)`,
+                            border: "1px solid",
+                            borderColor: "primary.main",
+                          }}
+                        >
+                          <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Typography
+                              variant="subtitle1"
+                              sx={{
+                                fontWeight: 700,
+                                color: "primary.dark",
+                                letterSpacing: 0.3,
+                              }}
+                            >
+                              Toplam
+                            </Typography>
+                            <Typography
+                              variant="h6"
+                              sx={{
+                                fontWeight: 800,
+                                fontVariantNumeric: "tabular-nums",
+                                color: "primary.dark",
+                                letterSpacing: -0.2,
+                              }}
+                            >
+                              {tl(totals.total)}
+                            </Typography>
+                          </Stack>
+                        </Box>
+                      </Stack>
+                    </Box>
+                  </Paper>
+                </Box>
+              )}
             </Box>
           )}
 
@@ -887,11 +1173,59 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
           {/* TAB 4: PAYMENT */}
           {tab === "payment" && (
             <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <Typography
+                  variant="subtitle2"
+                  sx={{
+                    color: "text.secondary",
+                    fontWeight: 600,
+                    letterSpacing: 0.3,
+                    mb: 0.5,
+                  }}
+                >
+                  Ödeme Bilgileri
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Bu bilgiler PDF çıktısında "Ödeme Detayları" tablosunda görünecek.
+                </Typography>
+              </Grid>
+
               <Grid item xs={12} sm={6}>
                 <TextField
-                  label="İndirim Oranı (%)" type="number" fullWidth size="small"
-                  value={pf.discount ?? 0}
-                  onChange={(e) => update(["discount"], Number(e.target.value))}
+                  label="Unvan"
+                  fullWidth
+                  size="small"
+                  value={pf.pay_title ?? ""}
+                  onChange={(e) => update(["pay_title"], e.target.value)}
+                  placeholder="Örn: ASEL AYDINLATMA MALZEMELERİ SAN. TİC. LTD. ŞTİ."
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  label="Banka"
+                  fullWidth
+                  size="small"
+                  value={pf.bank ?? ""}
+                  onChange={(e) => update(["bank"], e.target.value)}
+                  placeholder="Örn: Yapı Kredi"
+                />
+              </Grid>
+
+              <Grid item xs={12}>
+                <TextField
+                  label="IBAN"
+                  fullWidth
+                  size="small"
+                  value={pf.iban ?? ""}
+                  onChange={(e) => update(["iban"], e.target.value)}
+                  placeholder="TR00 0000 0000 0000 0000 0000 00"
+                  inputProps={{
+                    style: {
+                      fontFamily: "monospace",
+                      letterSpacing: 0.5,
+                    },
+                  }}
                 />
               </Grid>
             </Grid>
