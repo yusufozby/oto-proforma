@@ -15,10 +15,10 @@ import { baseApi } from "./storage";
 const PAGE_WIDTH = 210;
 const PAGE_HEIGHT = 297;
 
-const MARGIN_LEFT = 14;
-const MARGIN_RIGHT = 14;
-const MARGIN_TOP = 14;
-const MARGIN_BOTTOM = 14;
+const MARGIN_LEFT = 5;
+const MARGIN_RIGHT = 5;
+const MARGIN_TOP = 5;
+const MARGIN_BOTTOM = 5;
 
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
 
@@ -330,7 +330,7 @@ function drawCompanyAndOfferInfo(
     ["Unvan", safeString(session.firm)],
     ["Adres", safeString(session.center_address || session.fabric_address)],
     ["Telefon", safeString(session.phone)],
-    ["Mail", safeString(session.seller_email)],
+    ["Mail", safeString(session.email)],
   ];
 
   const rightRows: [string, string][] = [
@@ -643,6 +643,18 @@ async function drawProductTable(
 // ŞARTLAR + TOPLAMLAR
 // =========================================================
 
+// =========================================================
+// ŞARTLAR + TOPLAMLAR
+// =========================================================
+
+// =========================================================
+// ŞARTLAR + TOPLAMLAR
+// =========================================================
+
+// =========================================================
+// ŞARTLAR + TOPLAMLAR
+// =========================================================
+
 function drawConditionsAndTotals(
   pdf: jsPDF,
   pf: Proforma,
@@ -661,8 +673,7 @@ function drawConditionsAndTotals(
     conditionLines.push(...lines);
   }
 
-  // Toplamlar kutusu 3 satır × ~11mm + üst/alt padding = ~48mm
-  const totalsMinH = 48;
+  const totalsMinH = 34; // daha da sıkı
   const conditionsH = 12 + conditionLines.length * 4.5 + 6;
   const boxH = Math.max(totalsMinH, conditionsH);
 
@@ -672,15 +683,15 @@ function drawConditionsAndTotals(
   pdf.setFillColor(255, 255, 255);
   pdf.roundedRect(leftX, startY, leftW, boxH, 4, 4, "FD");
 
-  setText(pdf, "Şartlar ve Koşullar", leftX + 6, startY + 8, 8, true, TEXT_LABEL);
+  setText(pdf, "Şartlar ve Koşullar", leftX + 6, startY + 7, 8, true, TEXT_LABEL);
 
-  let cy = startY + 15;
+  let cy = startY + 13.5;
   pdf.setFont(FONT, "normal");
   pdf.setFontSize(7);
   pdf.setTextColor(...TEXT_DARK);
   for (const line of conditionLines) {
     pdf.text(line, leftX + 6, cy);
-    cy += 4.6;
+    cy += 4.5;
   }
 
   // ---- Sağ kutu: Toplamlar ----
@@ -698,10 +709,12 @@ function drawConditionsAndTotals(
       maximumFractionDigits: 2,
     });
 
-  const padX = 7;
-  const padTop = 8;
-  const padBottom = 8;
-  const rowH = (boxH - padTop - padBottom) / 3;
+  // Üst boşluk azaltıldı → Ara Toplam yukarıya çok daha yakın
+  const padX = 5;
+  const padTop = 0.5;     // ← önemli: çok düşük
+  const padBottom = 3.5;
+  const usableH = boxH - padTop - padBottom;
+  const rowH = usableH / 3;
 
   const rows: { label: string; value: string; isTotal: boolean }[] = [
     { label: "Ara Toplam", value: fmt(araTotal), isTotal: false },
@@ -711,45 +724,85 @@ function drawConditionsAndTotals(
 
   rows.forEach((row, idx) => {
     const rowTop = startY + padTop + idx * rowH;
-    const baselineY = rowTop + rowH / 2 + 1.5;
 
+    // DÜZELTME 3: Toplam satırı için dikey ortalama
+    // Normal satırlarda baseline standart, Toplam satırında gri alanın tam ortasına denk getiriyoruz.
+    let baselineY = rowTop + rowH / 2 + 1.2;
+
+    if (row.isTotal) {
+      // Toplam satırı için gri alanın yüksekliği: boxH - (rowTop - startY)
+      // Bu alanın tam ortasına yazıyı oturtmak için +1.2 yerine daha nötr bir değer kullanıyoruz.
+      // Böylece yazı gri alanın yukarısından ortalanmış olacak.
+      baselineY = rowTop + (boxH - (rowTop - startY)) / 2 + 1.2;
+    }
+
+    // Sadece Toplam satırı gri – border’ı ezmeyecek şekilde içeriden
+    // Sadece Toplam satırı gri – border’ı ezmeyecek şekilde içeriden
+    if (row.isTotal) {
+      pdf.setFillColor(...HEADER_BG);
+
+      const fillX = rightX + 0.2;
+      const fillW = rightW - 0.4;
+      const fillY = rowTop + 0.5;
+      const fillH = boxH - (rowTop - startY) - 0.7;
+      const radius = 4; // Kartın köşe yuvarlaklığı ile aynı olmalı
+
+      // 1. Parça: Üst kısım (Düz dikdörtgen)
+      // Yuvarlak köşelerin başladığı yere kadar düz çiziyoruz
+      pdf.rect(fillX, fillY, fillW, fillH - radius, "F");
+
+      // 2. Parça: Alt kısım (Yuvarlak köşeli)
+      // Sadece alt köşeleri yuvarlak olacak şekilde çiziyoruz
+      // roundedRect(x, y, w, h, rx, ry, style)
+      // Alt köşeleri yuvarlamak için tüm köşeleri yuvarlak çizip, üst kısmı düz çizgiyle kapatıyoruz
+      pdf.roundedRect(fillX, fillY + fillH - radius * 2, fillW, radius * 2, radius, radius, "F");
+
+      // Üstte kalan boşluğu (eğer varsa) düz dikdörtgenle kapat
+      // Aslında yukarıdaki iki parça birleşince tamamı dolmuş oluyor.
+      // Ancak garanti olması için üst parçayı biraz daha uzatabiliriz.
+    }
+
+    // Etiket
     setText(
       pdf,
       row.label,
       rightX + padX,
       baselineY,
-      row.isTotal ? 9.5 : 8.5,
+      row.isTotal ? 9.5 : 8.2,
       true,
       row.isTotal ? INK : TEXT_LABEL
     );
 
+    // Değer
     drawRightText(
       pdf,
       row.value,
       rightX + rightW - padX,
       baselineY,
-      row.isTotal ? 11 : 9.5,
+      row.isTotal ? 11 : 9.2,
       row.isTotal,
       row.isTotal ? INK : TEXT_DARK
     );
 
-    if (idx < rows.length - 1) {
+    // DÜZELTME 1 & 2: Divider Çizgileri
+    // Sadece ilk satırdan sonra (idx === 0) çizgi çekiyoruz. 
+    // Böylece KDV'nin altındaki çizgi kalkmış oluyor.
+    if (idx === 0) {
       const lineY = rowTop + rowH;
       drawLine(
         pdf,
-        rightX + padX,
+        rightX + 0.7,               // Sol kenara tam yapışık (border içi)
         lineY,
-        rightX + rightW - padX,
+        rightX + rightW - 0.7,      // Sağ kenara tam yapışık (border içi)
         lineY,
         BORDER,
-        0.3
+        0.35
       );
     }
   });
 
   return startY + boxH + 8;
 }
-
 // =========================================================
 // ÖDEME DETAYLARI
 // =========================================================
@@ -761,54 +814,90 @@ function drawPaymentDetails(
 ): number {
   const x = MARGIN_LEFT;
   const w = CONTENT_WIDTH;
-  const headerH = 8;
-  const rowH = 10;
+  const headerH = 9;
+  const rowH = 11;
+
+  // Sütun başlangıç noktaları (X koordinatları)
+  const col1_LabelX = x + 5;          // Unvan / IBAN etiketleri
+  const col1_ValueX = x + 25;         // Unvan / IBAN değerleri
+  const col2_StartX = x + w * 0.55;   // Sağ blok (Banka) başlangıcı
+  const col2_LabelX = col2_StartX + 5;// Banka etiketi
+  const col2_ValueX = col2_StartX + 25;// Yapı Kredi değeri
 
   // Başlık bar (hafif gri)
   pdf.setFillColor(...HEADER_BG);
   pdf.rect(x, startY, w, headerH, "F");
-
-  // Başlık metni — ortada, baseline offset ile tam ortalanmış
-  pdf.setFont(FONT, "bold");
-  pdf.setFontSize(7.5);
-  pdf.setTextColor(...TEXT_LABEL);
-  // Başlık baseline
-  const headerBaseline = startY + headerH / 2 + 1.4;  // ← 0.9 → 1.4
-
-  // Satır 1 baseline         // ← 0.9 → 1.4 // ← düzeltildi
-  pdf.text("Ödeme Detayları", x + w / 2, headerBaseline, { align: "center" });
 
   // Dış çerçeve
   pdf.setDrawColor(...BORDER);
   pdf.setLineWidth(0.4);
   pdf.rect(x, startY, w, headerH + rowH * 2, "S");
 
+  // Başlık metni — ortada
+  pdf.setFont(FONT, "bold");
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(...TEXT_LABEL);
+  const headerBaseline = startY + (headerH / 2) + 1.2;
+  pdf.text("Ödeme Detayları", x + w / 2, headerBaseline, { align: "center" });
+
   // Başlık alt çizgi
   drawLine(pdf, x, startY + headerH, x + w, startY + headerH, BORDER, 0.35);
 
-  // Orta dikey divider — sadece 1. satır boyunca
-  const midX = x + w * 0.55;
+  // =========================================================
+  // DİKEY ÇİZGİLER (Sizin istediğiniz eklemeler)
+  // =========================================================
+
+  // 1. Sol Dikey Çizgi (Etiket ve Değer arası)
+  // Başlığın bittiği yerden (startY + headerH) tablonun bittiği yere kadar çiziyoruz.
   drawLine(
     pdf,
-    midX,
+    col1_ValueX - 3, // Değerden 3mm önce (çizgi konumu)
     startY + headerH,
-    midX,
-    startY + headerH + rowH,
+    col1_ValueX - 3,
+    startY + headerH + rowH * 2, // En alta kadar iner (IBAN satırı dahil)
     BORDER_SOFT,
     0.3
   );
 
-  // ----- Satır 1 (dikey olarak tam ortalanmış) -----
+  // 2. Sağ Dikey Çizgi (Banka ve Yapı Kredi arası)
+  // Sadece 1. satır boyunca (Banka satırı) çiziyoruz, IBAN satırına inmiyor.
+  drawLine(
+    pdf,
+    col2_ValueX - 3, // Değerden 3mm önce
+    startY + headerH,
+    col2_ValueX - 3,
+    startY + headerH + rowH, // Sadece 1. satırın sonuna kadar
+    BORDER_SOFT,
+    0.3
+  );
+
+  // 3. Orta Dikey Çizgi (Sol blok ile Sağ blok arası)
+  // Zaten vardı, sadece koordinatını netleştirdik.
+  drawLine(
+    pdf,
+    col2_StartX,
+    startY + headerH,
+    col2_StartX,
+    startY + headerH + rowH, // Sadece 1. satır boyunca
+    BORDER_SOFT,
+    0.3
+  );
+
+  // =========================================================
+  // METİNLER
+  // =========================================================
+
+  // ----- Satır 1 (Unvan & Banka) -----
   const r1Top = startY + headerH;
-  const r1Baseline = r1Top + rowH / 2 + 1.4;  // ← 1.8 yerine 0.9
+  const r1Baseline = r1Top + (rowH / 2) + 1.0;
 
   // Sol: Unvan
-  setText(pdf, "Unvan", x + 5, r1Baseline - 0.2, 7, true, TEXT_LABEL);
-  setText(pdf, safeString(pf.pay_title), x + 22, r1Baseline - 0.2, 7.2, false, TEXT_DARK);
+  setText(pdf, "Unvan", col1_LabelX, r1Baseline, 7, true, TEXT_LABEL);
+  setText(pdf, safeString(pf.pay_title), col1_ValueX, r1Baseline, 7.5, false, TEXT_DARK);
 
   // Sağ: Banka
-  setText(pdf, "Banka", midX + 5, r1Baseline - 0.2, 7, true, TEXT_LABEL);
-  setText(pdf, "Yapı Kredi", midX + 22, r1Baseline - 0.2, 7.2, false, TEXT_DARK);
+  setText(pdf, "Banka", col2_LabelX, r1Baseline, 7, true, TEXT_LABEL);
+  setText(pdf, "Yapı Kredi", col2_ValueX, r1Baseline, 7.5, false, TEXT_DARK);
 
   // Satır 1 alt yatay çizgi
   drawLine(
@@ -821,14 +910,12 @@ function drawPaymentDetails(
     0.3
   );
 
-  // ----- Satır 2 (IBAN) — dikey çizgi YOK -----
-  const r2Top = r1Top + rowH;   // ← 0.9 → 1.4
+  // ----- Satır 2 (IBAN) -----
+  const r2Top = r1Top + rowH;
+  const r2Baseline = r2Top + (rowH / 2) + 1.0;
 
-  // Satır 2 baseline
-  const r2Baseline = r2Top + rowH / 2 + 1.4;          // ← 0.9 → 1.4 // ← 1.8 yerine 0.9
-
-  setText(pdf, "IBAN", x + 5, r2Baseline, 7, true, TEXT_LABEL);
-  setText(pdf, safeString(pf.iban), x + 22, r2Baseline, 7.2, false, TEXT_DARK);
+  setText(pdf, "IBAN", col1_LabelX, r2Baseline, 7, true, TEXT_LABEL);
+  setText(pdf, safeString(pf.iban), col1_ValueX, r2Baseline, 7.5, false, TEXT_DARK);
 
   return startY + headerH + rowH * 2 + 8;
 }
