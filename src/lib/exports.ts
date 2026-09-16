@@ -9,7 +9,7 @@ import { calcTotals, tl, resolveImageUrl } from "./helpers";
 import { baseApi } from "./storage";
 
 // =========================================================
-// SAYFA & RENKLER — 2. görsele birebir
+// SAYFA & RENKLER — 1. görsele birebir
 // =========================================================
 
 const PAGE_WIDTH = 210;
@@ -24,15 +24,15 @@ const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
 
 const FONT = "Inter";
 
-// Renk paleti
-const INK: [number, number, number] = [30, 30, 30];            // koyu siyah başlıklar
-const TEXT_DARK: [number, number, number] = [55, 55, 55];      // tablo değerleri / düz metin
-const TEXT_LABEL: [number, number, number] = [120, 120, 120];  // etiketler (gri)
-const TEXT_MUTED: [number, number, number] = [165, 165, 165];  // footer
-const PINK: [number, number, number] = [244, 164, 164];        // logo karesi / ürün görseli
-const BORDER: [number, number, number] = [215, 215, 215];      // tüm çerçeveler
-const BORDER_SOFT: [number, number, number] = [228, 228, 228]; // iç ayırıcılar
-const HEADER_BG: [number, number, number] = [248, 248, 248];   // tablo başlığı arka planı
+// Renk paleti (Hedef resme göre optimize edildi)
+const INK: [number, number, number] = [20, 20, 20];            // Koyu siyah başlıklar
+const TEXT_DARK: [number, number, number] = [60, 60, 60];      // Tablo değerleri
+const TEXT_LABEL: [number, number, number] = [130, 130, 130];  // Etiketler (gri)
+const TEXT_MUTED: [number, number, number] = [165, 165, 165];  // Footer
+const PINK: [number, number, number] = [244, 164, 164];        // Logo karesi
+const BORDER: [number, number, number] = [200, 200, 200];      // Dış çerçeveler
+const BORDER_SOFT: [number, number, number] = [230, 230, 230]; // İç ayırıcılar
+const HEADER_BG: [number, number, number] = [248, 248, 248];   // Tablo başlığı arka planı
 
 const TABLE_ROW_H = 10.5;
 const TABLE_HEADER_H = 8.5;
@@ -54,9 +54,6 @@ import WhatsappIconUrl from "../assets/icons/whatsapp.png?url";
 import MapsIconUrl from "../assets/icons/maps.png?url";
 // @ts-ignore
 import CompanyLogoUrl from "../assets/icons/logo.png?url";
-
-const DEFAULT_COMPANY_LOGO =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAgY0hSTQAAeiYAAICEAAD6AAAAgOgAAHUwAADqYAAAOpgAABd1NDZEAAAABGdBTUEAALGPC/xhBQAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAoKADAAQAAAABAAAAoAAAAAC118/4AAAIkUlEQVR4Ae1da1Qb1xl2R5Lgh3Ecx/m4SZw2Ttpme9p023/S3a/t5Kdpf6RpmqZNmrS3p/3R/pGm/dE2bdM0/SftJ333333333333333/084pS1iAnm4u4s54R/S8A3fmfu/3zpy5I63WsXDh/S0g0AICAi0gINACAi0gINACAi0gINACAi0gINACAi0gINACAi0gI=";
 
 // =========================================================
 // GÖRSEL DÖNÜŞTÜRÜCÜ
@@ -118,20 +115,20 @@ async function loadCompanyLogo(): Promise<string> {
   try {
     return await compressAndResizeImage(CompanyLogoUrl, 150, 150, 0.8);
   } catch {
-    return DEFAULT_COMPANY_LOGO;
+    return "";
   }
 }
 
 async function preloadProductImages(
-  products: ProductProforma[]
+  products: Product[]
 ): Promise<Map<number, string>> {
   const map = new Map<number, string>();
   if (!products || !Array.isArray(products)) return map;
 
   await Promise.all(
     products.map(async (row) => {
-      const productId = Number(row.product_id);
-      const imagePath = row.Product?.image;
+      const productId = Number(row.id);
+      const imagePath = row.image;
       if (!Number.isFinite(productId) || !imagePath) return;
 
       const url = resolveImageUrl(imagePath, baseApi);
@@ -271,48 +268,58 @@ function drawHeader(
   const x = MARGIN_LEFT;
   const y = MARGIN_TOP;
 
-  // Pembe kare logo
-  const logoSize = 12;
+  // Pembe kare logo — firma adı + alt başlığı ortalayacak şekilde
+  const logoSize = 13.5;
+  const logoY = y + 1.5; // Üstten hafif boşlukla ortala
   pdf.setFillColor(...PINK);
-  pdf.roundedRect(x, y, logoSize, logoSize, 2, 2, "F");
+  pdf.roundedRect(x, logoY, logoSize, logoSize, 1.5, 1.5, "F");
 
-  // Firma adı — koyu siyah + bold
+  // Firma adı
   const firmName = safeString(session.firm) || "ASEL Aydınlatma";
-  setText(pdf, firmName, x + logoSize + 4, y + 5.8, 13, true, INK);
 
-  // Alt başlık — gri, bold, küçük
+  // Firma adı + PROFORM için ortak baseline
+  // Logo ortasına denk gelecek şekilde ayarlandı
+  const titleBaselineY = y + 7.5;
+  const subBaselineY = titleBaselineY + 5.8;
+
+  // Sol taraf — Firma adı
+  setText(pdf, firmName, x + logoSize + 4, titleBaselineY, 18, true, INK);
+
+  // Sol taraf — Alt başlık
   setText(
     pdf,
     "GRUP PRİZ • GOLYAT • AYDINLATMA",
     x + logoSize + 4,
-    y + 11,
-    6,
+    subBaselineY,
+    7.5,
     true,
     TEXT_LABEL
   );
 
-  // Sağ taraf — PROFORM siyah bold
+  // Sağ taraf — PROFORM (firma adı ile aynı baseline)
   const rightX = PAGE_WIDTH - MARGIN_RIGHT;
-  drawRightText(pdf, "PROFORM", rightX, y + 5.8, 15, true, INK);
+  drawRightText(pdf, "PROFORM", rightX, titleBaselineY, 26, true, INK);
+
+  // Sağ taraf — Alt başlık
   drawRightText(
     pdf,
     "Fiyat Teklifi by Oto Proforma",
     rightX,
-    y + 11,
-    6.2,
+    subBaselineY,
+    7.5,
     false,
     TEXT_LABEL
   );
 
   // Alt divider
-  const lineY = y + 16;
-  drawLine(pdf, MARGIN_LEFT, lineY, PAGE_WIDTH - MARGIN_RIGHT, lineY, BORDER, 0.35);
+  const lineY = y + 18;
+  drawLine(pdf, MARGIN_LEFT, lineY, PAGE_WIDTH - MARGIN_RIGHT, lineY, BORDER, 0.4);
 
   return lineY + 6;
 }
 
 // =========================================================
-// FİRMA + TEKLİF BİLGİLERİ  (sol 4 satır / sağ 3 satır)
+// FİRMA + TEKLİF BİLGİLERİ
 // =========================================================
 
 function drawCompanyAndOfferInfo(
@@ -322,8 +329,8 @@ function drawCompanyAndOfferInfo(
   startY: number
 ): number {
   const leftX = MARGIN_LEFT;
-  const rightX = PAGE_WIDTH / 2 + 8;
-  const labelW = 16;
+  const rightX = PAGE_WIDTH / 2 + 5;
+  const labelW = 18;
   let y = startY;
 
   const leftRows: [string, string][] = [
@@ -350,21 +357,21 @@ function drawCompanyAndOfferInfo(
   ];
 
   leftRows.forEach(([label, value]) => {
-    setText(pdf, label, leftX, y, 7.2, true, TEXT_LABEL);
-    const lines = splitText(pdf, value, 78);
-    setText(pdf, lines[0] || "", leftX + labelW, y, 7.2, false, TEXT_DARK);
+    setText(pdf, label, leftX, y, 7.5, true, TEXT_LABEL);
+    const lines = splitText(pdf, value, 75);
+    setText(pdf, lines[0] || "", leftX + labelW, y, 7.5, false, TEXT_DARK);
     if (lines.length > 1) {
-      y += 3.6;
-      setText(pdf, lines[1], leftX + labelW, y, 7.2, false, TEXT_DARK);
+      y += 3.8;
+      setText(pdf, lines[1], leftX + labelW, y, 7.5, false, TEXT_DARK);
     }
-    y += 4.4;
+    y += 4.8;
   });
 
   let ry = startY;
   rightRows.forEach(([label, value]) => {
-    setText(pdf, label, rightX, ry, 7.2, true, TEXT_LABEL);
-    setText(pdf, value, rightX + 22, ry, 7.2, false, TEXT_DARK);
-    ry += 4.4;
+    setText(pdf, label, rightX, ry, 7.5, true, TEXT_LABEL);
+    setText(pdf, value, rightX + 24, ry, 7.5, false, TEXT_DARK);
+    ry += 4.8;
   });
 
   return Math.max(y, ry) + 4;
@@ -395,9 +402,9 @@ function getProductColumns(): ProductColumn[] {
   return [
     { key: "no", title: "#", width: 7, align: "center" },
     { key: "image", title: "RESİM", width: 10, align: "center" },
-    { key: "kod", title: "KOD", width: 22, align: "left" },
-    { key: "isim", title: "İSİM", width: 46, align: "left" },
-    { key: "barkod", title: "BARKOD", width: 26, align: "center" },
+    { key: "kod", title: "KOD", width: 24, align: "left" },
+    { key: "isim", title: "İSİM", width: 44, align: "left" },
+    { key: "barkod", title: "BARKOD", width: 24, align: "center" },
     { key: "koliIci", title: "KOLİ\nİÇİ", width: 12, align: "center" },
     { key: "koli", title: "KOLİ", width: 12, align: "center" },
     { key: "totalAdet", title: "TOTAL\nADET", width: 14, align: "center" },
@@ -406,36 +413,61 @@ function getProductColumns(): ProductColumn[] {
   ];
 }
 
+function toNumber(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function getProductValue(
-  row: ProductProforma,
+  row: Product,
   index: number,
   key: ProductColumn["key"]
 ): string {
-  const product = row.Product;
-  const parcelCount = Number(row.parcel) || 0;
-  const insideCount = Number(product?.parcel_inside) || 0;
-  const totalAdet = parcelCount * insideCount;
-  const unitPrice = Number(product?.unit) || 0;
-
+  const r = row as any;
   switch (key) {
     case "no":
       return String(index + 1).padStart(2, "0");
+
     case "kod":
-      return safeString(product?.code);
+      return safeString(r.code ?? r.code ?? r.product_id);
+
     case "isim":
-      return safeString(product?.name);
+      return safeString(r.product_name ?? r.name ?? r.title ?? "");
+
     case "barkod":
-      return safeString(product?.gtype);
-    case "koliIci":
-      return safeString(product?.parcel_inside);
-    case "koli":
-      return safeString(row.parcel);
-    case "totalAdet":
-      return String(totalAdet);
-    case "birim":
-      return tl(unitPrice);
-    case "total":
-      return tl(totalAdet * unitPrice);
+      return safeString(r.gtype ?? r.barkod ?? "");
+
+    case "koliIci": {
+      const koliIci = toNumber(r.parcel_inside ?? r.koli_ici ?? r.per_box ?? 0);
+      return koliIci ? String(koliIci) : "";
+    }
+
+    case "koli": {
+      const koli = toNumber(r.parcel ?? r.koli ?? r.box_count ?? 0);
+      return koli ? String(koli) : "";
+    }
+
+    case "totalAdet": {
+      const koliIci = toNumber(r.parcel_inside ?? r.koli_ici ?? r.per_box ?? 0);
+      const koli = toNumber(r.parcel ?? r.koli ?? r.box_count ?? 0);
+      const total = koliIci * koli;
+      return total ? String(total) : "";
+    }
+
+    case "birim": {
+      const unitPrice = toNumber(r.unit ?? r.price ?? r.birim_fiyat ?? 0);
+      return unitPrice ? tl(unitPrice) : "";
+    }
+
+    case "total": {
+      const koliIci = toNumber(r.parcel_inside ?? r.koli_ici ?? r.per_box ?? 0);
+      const koli = toNumber(r.parcel ?? r.koli ?? r.box_count ?? 0);
+      const totalAdet = koliIci * koli;
+      const unitPrice = toNumber(r.unit ?? r.price ?? r.birim_fiyat ?? 0);
+      const totalPrice = totalAdet * unitPrice;
+      return totalPrice ? tl(totalPrice) : "";
+    }
+
     default:
       return "";
   }
@@ -478,7 +510,7 @@ function drawProductTableHeader(
   pdf.setFillColor(...HEADER_BG);
   pdf.rect(x, y, tableWidth, headerHeight, "F");
 
-  drawLine(pdf, x, y, x + tableWidth, y, BORDER, 0.35);
+  drawLine(pdf, x, y, x + tableWidth, y, BORDER, 0.4);
 
   pdf.setFont(FONT, "bold");
   pdf.setFontSize(5.5);
@@ -507,14 +539,14 @@ function drawProductTableHeader(
     x + tableWidth,
     y + headerHeight,
     BORDER,
-    0.35
+    0.4
   );
   return headerHeight;
 }
 
 function drawProductRow(
   pdf: jsPDF,
-  row: ProductProforma,
+  row: Product,
   index: number,
   x: number,
   y: number,
@@ -531,7 +563,7 @@ function drawProductRow(
   }
 
   let currentX = x;
-  const productId = Number(row.product_id);
+  const productId = Number(row.id);
 
   for (const column of columns) {
     if (column.key === "image") {
@@ -571,7 +603,7 @@ function drawProductRow(
     x + tableWidth,
     y + rowHeight,
     BORDER_SOFT,
-    0.2
+    0.25
   );
   return rowHeight;
 }
@@ -585,7 +617,7 @@ async function drawProductTable(
   const tableWidth = CONTENT_WIDTH;
   const rowHeight = TABLE_ROW_H;
 
-  const products: ProductProforma[] = (pf as any).products || [];
+  const products: Product[] = (pf as any).products || [];
   const imageMap = await preloadProductImages(products);
 
   let currentY = startY;
@@ -603,7 +635,7 @@ async function drawProductTable(
         MARGIN_LEFT + tableWidth,
         currentY,
         BORDER,
-        0.35
+        0.4
       );
       pdf.addPage();
       currentY = MARGIN_TOP;
@@ -634,22 +666,54 @@ async function drawProductTable(
     MARGIN_LEFT + tableWidth,
     currentY,
     BORDER,
-    0.35
+    0.4
   );
   return currentY + 8;
 }
 
 // =========================================================
-// ŞARTLAR + TOPLAMLAR
+// İSKONTOLU TOPLAM HESAPLAMA
 // =========================================================
 
-// =========================================================
-// ŞARTLAR + TOPLAMLAR
-// =========================================================
+/**
+ * Tüm ürünlerin toplamını hesaplar ve her ürünün discount (integer, oran)
+ * alanını uygulayarak iskontolu ara toplamı bulur.
+ */
+function calcDiscountedTotals(pf: Proforma): {
+  rawTotal: number;
+  discountedTotal: number;
+  kdv: number;
+  grandTotal: number;
+} {
+  const products: Product[] = (pf as any).products || [];
 
-// =========================================================
-// ŞARTLAR + TOPLAMLAR
-// =========================================================
+  let discountedTotal = 0;
+
+  for (const row of products) {
+    const r = row as any;
+    const koliIci = toNumber(r.parcel_inside ?? r.koli_ici ?? r.per_box ?? 0);
+    const koli = toNumber(r.parcel ?? r.koli ?? r.box_count ?? 0);
+    const totalAdet = koliIci * koli;
+    const unitPrice = toNumber(r.unit ?? r.price ?? r.birim_fiyat ?? 0);
+    const lineTotal = totalAdet * unitPrice;
+
+    // discount: integer, oran olarak (ör: 10 => %10 iskonto)
+    const discountRate = toNumber(pf.discount ?? 0);
+    const discountedLine = lineTotal * (1 - discountRate / 100);
+
+    discountedTotal += discountedLine;
+  }
+
+  const kdv = discountedTotal * 0.2;
+  const grandTotal = discountedTotal + kdv;
+
+  return {
+    rawTotal: discountedTotal, // artık iskontolu
+    discountedTotal,
+    kdv,
+    grandTotal,
+  };
+}
 
 // =========================================================
 // ŞARTLAR + TOPLAMLAR
@@ -673,7 +737,7 @@ function drawConditionsAndTotals(
     conditionLines.push(...lines);
   }
 
-  const totalsMinH = 34; // daha da sıkı
+  const totalsMinH = 34;
   const conditionsH = 12 + conditionLines.length * 4.5 + 6;
   const boxH = Math.max(totalsMinH, conditionsH);
 
@@ -700,8 +764,8 @@ function drawConditionsAndTotals(
   pdf.setFillColor(255, 255, 255);
   pdf.roundedRect(rightX, startY, rightW, boxH, 4, 4, "FD");
 
-  const { araTotal, total } = calcTotals(pf);
-  const kdvAmount = araTotal * 0.2;
+  // 🔴 İSKONTOLU HESAPLAMA BURADA KULLANILIYOR
+  const { discountedTotal, kdv, grandTotal } = calcDiscountedTotals(pf);
 
   const fmt = (n: number) =>
     n.toLocaleString("tr-TR", {
@@ -709,35 +773,27 @@ function drawConditionsAndTotals(
       maximumFractionDigits: 2,
     });
 
-  // Üst boşluk azaltıldı → Ara Toplam yukarıya çok daha yakın
   const padX = 5;
-  const padTop = 0.5;     // ← önemli: çok düşük
+  const padTop = 0.5;
   const padBottom = 3.5;
   const usableH = boxH - padTop - padBottom;
   const rowH = usableH / 3;
 
   const rows: { label: string; value: string; isTotal: boolean }[] = [
-    { label: "Ara Toplam", value: fmt(araTotal), isTotal: false },
-    { label: "KDV (%20)", value: fmt(kdvAmount), isTotal: false },
-    { label: "Toplam", value: fmt(total), isTotal: true },
+    { label: "Ara Toplam", value: fmt(discountedTotal), isTotal: false },
+    { label: "KDV (%20)", value: fmt(kdv), isTotal: false },
+    { label: "Toplam", value: fmt(grandTotal), isTotal: true },
   ];
 
   rows.forEach((row, idx) => {
     const rowTop = startY + padTop + idx * rowH;
 
-    // DÜZELTME 3: Toplam satırı için dikey ortalama
-    // Normal satırlarda baseline standart, Toplam satırında gri alanın tam ortasına denk getiriyoruz.
     let baselineY = rowTop + rowH / 2 + 1.2;
 
     if (row.isTotal) {
-      // Toplam satırı için gri alanın yüksekliği: boxH - (rowTop - startY)
-      // Bu alanın tam ortasına yazıyı oturtmak için +1.2 yerine daha nötr bir değer kullanıyoruz.
-      // Böylece yazı gri alanın yukarısından ortalanmış olacak.
       baselineY = rowTop + (boxH - (rowTop - startY)) / 2 + 1.2;
     }
 
-    // Sadece Toplam satırı gri – border’ı ezmeyecek şekilde içeriden
-    // Sadece Toplam satırı gri – border’ı ezmeyecek şekilde içeriden
     if (row.isTotal) {
       pdf.setFillColor(...HEADER_BG);
 
@@ -745,24 +801,12 @@ function drawConditionsAndTotals(
       const fillW = rightW - 0.4;
       const fillY = rowTop + 0.5;
       const fillH = boxH - (rowTop - startY) - 0.7;
-      const radius = 4; // Kartın köşe yuvarlaklığı ile aynı olmalı
+      const radius = 4;
 
-      // 1. Parça: Üst kısım (Düz dikdörtgen)
-      // Yuvarlak köşelerin başladığı yere kadar düz çiziyoruz
       pdf.rect(fillX, fillY, fillW, fillH - radius, "F");
-
-      // 2. Parça: Alt kısım (Yuvarlak köşeli)
-      // Sadece alt köşeleri yuvarlak olacak şekilde çiziyoruz
-      // roundedRect(x, y, w, h, rx, ry, style)
-      // Alt köşeleri yuvarlamak için tüm köşeleri yuvarlak çizip, üst kısmı düz çizgiyle kapatıyoruz
       pdf.roundedRect(fillX, fillY + fillH - radius * 2, fillW, radius * 2, radius, radius, "F");
-
-      // Üstte kalan boşluğu (eğer varsa) düz dikdörtgenle kapat
-      // Aslında yukarıdaki iki parça birleşince tamamı dolmuş oluyor.
-      // Ancak garanti olması için üst parçayı biraz daha uzatabiliriz.
     }
 
-    // Etiket
     setText(
       pdf,
       row.label,
@@ -773,7 +817,6 @@ function drawConditionsAndTotals(
       row.isTotal ? INK : TEXT_LABEL
     );
 
-    // Değer
     drawRightText(
       pdf,
       row.value,
@@ -784,16 +827,13 @@ function drawConditionsAndTotals(
       row.isTotal ? INK : TEXT_DARK
     );
 
-    // DÜZELTME 1 & 2: Divider Çizgileri
-    // Sadece ilk satırdan sonra (idx === 0) çizgi çekiyoruz. 
-    // Böylece KDV'nin altındaki çizgi kalkmış oluyor.
     if (idx === 0) {
       const lineY = rowTop + rowH;
       drawLine(
         pdf,
-        rightX + 0.7,               // Sol kenara tam yapışık (border içi)
+        rightX + 0.7,
         lineY,
-        rightX + rightW - 0.7,      // Sağ kenara tam yapışık (border içi)
+        rightX + rightW - 0.7,
         lineY,
         BORDER,
         0.35
@@ -803,6 +843,7 @@ function drawConditionsAndTotals(
 
   return startY + boxH + 8;
 }
+
 // =========================================================
 // ÖDEME DETAYLARI
 // =========================================================
@@ -817,12 +858,11 @@ function drawPaymentDetails(
   const headerH = 9;
   const rowH = 11;
 
-  // Sütun başlangıç noktaları (X koordinatları)
-  const col1_LabelX = x + 5;          // Unvan / IBAN etiketleri
-  const col1_ValueX = x + 25;         // Unvan / IBAN değerleri
-  const col2_StartX = x + w * 0.55;   // Sağ blok (Banka) başlangıcı
-  const col2_LabelX = col2_StartX + 5;// Banka etiketi
-  const col2_ValueX = col2_StartX + 25;// Yapı Kredi değeri
+  const col1_LabelX = x + 5;
+  const col1_ValueX = x + 25;
+  const col2_StartX = x + w * 0.55;
+  const col2_LabelX = col2_StartX + 5;
+  const col2_ValueX = col2_StartX + 25;
 
   // Başlık bar (hafif gri)
   pdf.setFillColor(...HEADER_BG);
@@ -843,59 +883,24 @@ function drawPaymentDetails(
   // Başlık alt çizgi
   drawLine(pdf, x, startY + headerH, x + w, startY + headerH, BORDER, 0.35);
 
-  // =========================================================
-  // DİKEY ÇİZGİLER (Sizin istediğiniz eklemeler)
-  // =========================================================
-
-  // 1. Sol Dikey Çizgi (Etiket ve Değer arası)
-  // Başlığın bittiği yerden (startY + headerH) tablonun bittiği yere kadar çiziyoruz.
-  drawLine(
-    pdf,
-    col1_ValueX - 3, // Değerden 3mm önce (çizgi konumu)
-    startY + headerH,
-    col1_ValueX - 3,
-    startY + headerH + rowH * 2, // En alta kadar iner (IBAN satırı dahil)
-    BORDER_SOFT,
-    0.3
-  );
-
-  // 2. Sağ Dikey Çizgi (Banka ve Yapı Kredi arası)
-  // Sadece 1. satır boyunca (Banka satırı) çiziyoruz, IBAN satırına inmiyor.
-  drawLine(
-    pdf,
-    col2_ValueX - 3, // Değerden 3mm önce
-    startY + headerH,
-    col2_ValueX - 3,
-    startY + headerH + rowH, // Sadece 1. satırın sonuna kadar
-    BORDER_SOFT,
-    0.3
-  );
-
-  // 3. Orta Dikey Çizgi (Sol blok ile Sağ blok arası)
-  // Zaten vardı, sadece koordinatını netleştirdik.
+  // Orta Dikey Çizgi
   drawLine(
     pdf,
     col2_StartX,
     startY + headerH,
     col2_StartX,
-    startY + headerH + rowH, // Sadece 1. satır boyunca
+    startY + headerH + rowH,
     BORDER_SOFT,
     0.3
   );
-
-  // =========================================================
-  // METİNLER
-  // =========================================================
 
   // ----- Satır 1 (Unvan & Banka) -----
   const r1Top = startY + headerH;
   const r1Baseline = r1Top + (rowH / 2) + 1.0;
 
-  // Sol: Unvan
   setText(pdf, "Unvan", col1_LabelX, r1Baseline, 7, true, TEXT_LABEL);
   setText(pdf, safeString(pf.pay_title), col1_ValueX, r1Baseline, 7.5, false, TEXT_DARK);
 
-  // Sağ: Banka
   setText(pdf, "Banka", col2_LabelX, r1Baseline, 7, true, TEXT_LABEL);
   setText(pdf, "Yapı Kredi", col2_ValueX, r1Baseline, 7.5, false, TEXT_DARK);
 
