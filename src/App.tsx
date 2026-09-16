@@ -10,6 +10,7 @@ import { storeGet, storeSet } from "./lib/storage";
 import type { Proforma, Session, UsersMap } from "./types";
 import AppointmentsAdmin from "./components/AppointmentsAdmin";
 import AppointmentsCustomer from "./components/AppointmentsCustomer";
+import AdminDashboard from "./components/DashboardAdmin";
 const CURRENT_SESSION_KEY = "session:current";
 
 /**
@@ -78,7 +79,9 @@ export default function App() {
 
           <Route
             path="/dashboard"
-            element={session ? <Dashboard session={session} onLogout={handleLogout} /> : <Navigate to="/login" replace />}
+            element={session && session.role === "müşteri" ?
+              <Dashboard session={session} onLogout={handleLogout} />
+              : session && session.role === "admin" ? <AdminDashboard onLogout={handleLogout} session={session} /> : <Navigate to="/login" replace />}
           />
 
           <Route

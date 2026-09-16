@@ -23,11 +23,11 @@ interface AccountSettingsProps {
 
 type TabKey = "profile" | "seller" | "links" | "password";
 
-const TABS: { key: TabKey; label: string; icon: React.ReactElement }[] = [
-  { key: "profile", label: "Profil", icon: <PersonIcon fontSize="small" /> },
-  { key: "seller", label: "Satıcı Bilgileri", icon: <BusinessIcon fontSize="small" /> },
-  { key: "links", label: "Bağlantılar", icon: <LinkIcon fontSize="small" /> },
-  { key: "password", label: "Şifre", icon: <KeyIcon fontSize="small" /> },
+const TABS: { key: TabKey; label: string; icon: React.ReactElement; isCostumer: boolean; }[] = [
+  { key: "profile", label: "Profil", icon: <PersonIcon fontSize="small" />, isCostumer: false },
+  { key: "seller", label: "Satıcı Bilgileri", icon: <BusinessIcon fontSize="small" />, isCostumer: true },
+  { key: "links", label: "Bağlantılar", icon: <LinkIcon fontSize="small" />, isCostumer: true },
+  { key: "password", label: "Şifre", icon: <KeyIcon fontSize="small" />, isCostumer: false },
 ];
 
 // .NET'ten gelen hata gövdesi string / {message} / ValidationProblemDetails
@@ -262,7 +262,7 @@ export default function AccountSettings({ session, onSessionUpdate, setSession }
 
       <Container maxWidth="md" sx={{ py: 4 }}>
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2, borderBottom: 1, borderColor: "divider" }}>
-          {TABS.map((t) => <Tab key={t.key} value={t.key} label={t.label} icon={t.icon} iconPosition="start" sx={{ minHeight: 48 }} />)}
+          {TABS.filter((item) => session.role === "admin" ? !item.isCostumer : true).map((t) => <Tab key={t.key} value={t.key} label={t.label} icon={t.icon} iconPosition="start" sx={{ minHeight: 48 }} />)}
         </Tabs>
 
         <Paper variant="outlined" sx={{ p: 3 }}>
