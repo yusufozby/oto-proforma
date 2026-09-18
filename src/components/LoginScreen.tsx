@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
   Box, Typography, TextField, Button, ToggleButtonGroup, ToggleButton,
   IconButton, InputAdornment, Alert, Stack,
@@ -7,12 +7,10 @@ import {
 import ElectricBoltIcon from "@mui/icons-material/ElectricBolt";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
-import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import LoginIcon from "@mui/icons-material/Login";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 
-import type { UsersMap, UserRole, Session } from "../types";
+import type { Session } from "../types";
 import { baseApi } from "../lib/storage";
 
 interface LoginScreenProps {
@@ -21,7 +19,6 @@ interface LoginScreenProps {
 
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const navigate = useNavigate();
-  const [roleTab, setRoleTab] = useState<UserRole>("müşteri");
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -33,47 +30,27 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const switchRoleTab = (r: UserRole | null) => {
-    if (!r) return;
-    setRoleTab(r);
-    setMode("login");
-    setError("");
-    setSuccess("");
-  };
-  // .NET'ten gelen hata gövdesi 3 farklı şekilde gelebilir:
-  //  1) BadRequest("düz string")            -> data bir string
-  //  2) Unauthorized(new { message = "…" })  -> data.message
-  //  3) [ApiController] otomatik model hatası -> data.errors / data.title
-  // .NET'ten gelen hata gövdesi birkaç farklı şekilde gelebilir:
-  //  1) BadRequest("mesaj") -> çoğu zaman text/plain, JSON.parse edilemez
-  //  2) BadRequest(new { message = "…" }) veya Unauthorized(new {...}) -> JSON obje
-  //  3) [ApiController] otomatik model hatası -> ValidationProblemDetails (data.errors)
   const extractErrorMessage = async (response: Response, fallback: string) => {
     const raw = await response.text();
     if (!raw) return fallback;
 
     try {
       const data = JSON.parse(raw);
-
       if (typeof data === "string") return data;
       if (data?.message) return data.message;
-
       if (data?.errors) {
         const firstField = Object.values(data.errors)[0];
         if (Array.isArray(firstField) && firstField.length > 0) return firstField[0];
       }
-
       if (data?.title) return data.title;
-
       return fallback;
     } catch {
-      // JSON değil — muhtemelen text/plain dönen düz .NET mesajı, olduğu gibi göster
       return raw;
     }
   };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     setError("");
     setSuccess("");
     setBusy(true);
@@ -82,17 +59,33 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
       if (mode === "login") {
         const response = await fetch(`${baseApi}/api/Auth/login`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             username: username.trim(),
             password: password,
-            roleId: roleTab === "admin" ? 1 : 2,
           }),
         });
 
         if (!response.ok) {
+          // Eğer email doğrulanmamışsa (401 + requiresVerification) doğrulama sayfasına yönlendir
+          try {
+            const clone = response.clone();
+            const errorData = await clone.json();
+
+            if (errorData.requiresVerification) {
+              // API artık email ve username'i de dönüyor
+              navigate("/verify-email", {
+                state: {
+                  email: errorData.email || email || username,
+                  username: errorData.username || username,
+                },
+              });
+              return;
+            }
+          } catch (err) {
+            // JSON parse hatası olursa normal hata akışına devam et
+          }
+
           setError(await extractErrorMessage(response, "Kullanıcı adı veya şifre hatalı."));
           return;
         }
@@ -100,49 +93,61 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         const data = await response.json();
         console.log("Login response data:", data);
 
+        // API'den dönen role'e göre otomatik atama yapılıyor
         onLogin({
           google_map_link: data.google_map_link,
           phone_link: data.phone_link,
           website_link: data.website_link,
-          center_address: data.center_address, fabric_address: data.fabric_address, email: data.email, seller_email: data.seller_email, username: username.trim(), token: data.token, firm: data.firm, fullname: data.fullname, role: data.role, userId: data.userId, can_add_proforma: data.can_add_proforma, phone: data.phone
+          center_address: data.center_address,
+          fabric_address: data.fabric_address,
+          email: data.email,
+          seller_email: data.seller_email,
+          username: username.trim(),
+          token: data.token,
+          firm: data.firm,
+          fullname: data.fullname,
+          role: data.role,
+          userId: data.userId,
+          can_add_proforma: data.can_add_proforma,
+          phone: data.phone,
         });
-        navigate("/dashboard");
+
+        // Role göre yönlendirme (istersen ayrı dashboard'lar kullan)
+        if (data.role === "admin") {
+          navigate("/admin/dashboard");
+        } else {
+          navigate("/dashboard");
+        }
       } else {
-        // REGISTER — email, username ve password zorunlu
+        // REGISTER
         if (!username.trim() || !password || !email.trim()) {
           setError("Lütfen kullanıcı adı, e-posta ve şifreyi doldurun.");
           return;
         }
 
-        const response = await fetch(
-          `${baseApi}/api/Auth/register`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              username: username.trim(),
-              password: password,
-              email: email.trim(),
-              phone: phone.trim(),
-              firm: company.trim(),
-              roleId: 2,
-            }),
-          }
-        );
+        const response = await fetch(`${baseApi}/api/Auth/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: username.trim(),
+            password: password,
+            email: email.trim(),
+            phone: phone.trim(),
+            firm: company.trim(),
+            roleId: 2, // Herkes müşteri olarak kayıt olur
+          }),
+        });
 
         if (!response.ok) {
           setError(await extractErrorMessage(response, "Kayıt sırasında bir hata oluştu."));
           return;
         }
 
-        setSuccess("Başarıyla kullanıcı oluşturuldu. Şimdi giriş yapabilirsiniz.");
-        setMode("login");
-        setPassword("");
-        setEmail("");
-        setPhone("");
-        setCompany("");
+        // Kayıt başarılı - API email doğrulama kodu gönderdi
+        // Kullanıcıyı doğrulama ekranına yönlendir
+        navigate("/verify-email", {
+          state: { email: email.trim(), username: username.trim() },
+        });
       }
     } catch (error) {
       console.error(error);
@@ -151,8 +156,8 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
       setBusy(false);
     }
   };
+
   const formatPhoneTR = (raw: string) => {
-    // sadece rakamları al, en fazla 10 hane (başındaki 0 hariç, örn: 5xx xxx xx xx)
     let digits = raw.replace(/\D/g, "");
     if (digits.startsWith("0")) digits = digits.slice(1);
     digits = digits.slice(0, 10);
@@ -166,10 +171,11 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     if (digits.length > 8) out += " " + digits.slice(8, 10);
     return out;
   };
+
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPhone(formatPhoneTR(e.target.value));
-
   };
+
   return (
     <Box sx={{ minHeight: 600, width: "100%", display: "flex" }}>
       {/* sol marka paneli */}
@@ -221,41 +227,41 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             <Typography variant="h6">Oto Proforma</Typography>
           </Stack>
 
-          <Stack direction="row" justifyContent="flex-end" sx={{ mb: roleTab === "admin" ? 1 : 1.5 }}>
-            <Button
-              size="small"
-              variant="text"
-              onClick={() => switchRoleTab(roleTab === "admin" ? "müşteri" : "admin")}
-              startIcon={roleTab === "admin" ? <ArrowBackIcon sx={{ fontSize: 14 }} /> : <AdminPanelSettingsIcon sx={{ fontSize: 14 }} />}
-              sx={{ color: "text.secondary", textTransform: "none", fontSize: 12, minWidth: 0, px: 1, py: 0.25 }}
-            >
-              {roleTab === "admin" ? "Firma girişine dön" : "Yönetici girişi"}
-            </Button>
-          </Stack>
-
-          {roleTab === "müşteri" ? (
-            <ToggleButtonGroup
-              value={mode}
-              exclusive
-              onChange={(_, v) => { if (v) { setMode(v); setError(""); setSuccess(""); } }}
-              fullWidth
-              color="secondary"
-              sx={{ mb: 3 }}
-            >
-              <ToggleButton value="login" sx={{ gap: 1 }}><LoginIcon fontSize="small" /> Giriş Yap</ToggleButton>
-              <ToggleButton value="register" sx={{ gap: 1 }}><PersonAddIcon fontSize="small" /> Kayıt Ol</ToggleButton>
-            </ToggleButtonGroup>
-          ) : (
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 3 }}>
-              Yönetici hesapları güvenlik nedeniyle buradan kayıt edilemez; önceden tanımlı bilgilerle giriş yapın.
-            </Typography>
-          )}
+          <ToggleButtonGroup
+            value={mode}
+            exclusive
+            onChange={(_, v) => {
+              if (v) {
+                setMode(v);
+                setError("");
+                setSuccess("");
+              }
+            }}
+            fullWidth
+            color="secondary"
+            sx={{ mb: 3 }}
+          >
+            <ToggleButton value="login" sx={{ gap: 1 }}>
+              <LoginIcon fontSize="small" /> Giriş Yap
+            </ToggleButton>
+            <ToggleButton value="register" sx={{ gap: 1 }}>
+              <PersonAddIcon fontSize="small" /> Kayıt Ol
+            </ToggleButton>
+          </ToggleButtonGroup>
 
           <Box component="form" onSubmit={submit}>
             <Stack spacing={2.5}>
-              {mode === "register" && roleTab === "müşteri" && (
+              {mode === "register" && (
                 <>
-                  <TextField label="E-posta" type="email" value={email} onChange={(e) => setEmail(e.target.value)} fullWidth required placeholder="ornek@firma.com" />
+                  <TextField
+                    label="E-posta"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    fullWidth
+                    required
+                    placeholder="ornek@firma.com"
+                  />
                   <TextField
                     label="Telefon"
                     value={phone}
@@ -264,18 +270,26 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                     placeholder="0(5xx) xxx xx xx"
                     inputProps={{ inputMode: "numeric", maxLength: 16 }}
                   />
-                  <TextField label="Firma Adı" value={company} onChange={(e) => setCompany(e.target.value)} fullWidth placeholder="Firma Ltd. Şti." />
+                  <TextField
+                    label="Firma Adı"
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                    fullWidth
+                    placeholder="Firma Ltd. Şti."
+                  />
                 </>
               )}
+
               <TextField
                 label="Kullanıcı Adı"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 fullWidth
                 required
-                placeholder={roleTab === "admin" ? "admin" : "demo"}
+                placeholder="kullanici_adi"
                 autoComplete="username"
               />
+
               <TextField
                 label="Şifre"
                 type={showPw ? "text" : "password"}
@@ -295,16 +309,39 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                 }}
               />
 
+              {/* Şifremi Unuttum Linki */}
+              {mode === "login" && (
+                <Box sx={{ textAlign: "right", mt: -1 }}>
+                  <Link to="/forgot-password" style={{ textDecoration: "none" }}>
+                    <Typography variant="caption" color="primary" sx={{ "&:hover": { textDecoration: "underline" } }}>
+                      Şifremi Unuttum
+                    </Typography>
+                  </Link>
+                </Box>
+              )}
+
               {error && <Alert severity="error">{error}</Alert>}
               {success && <Alert severity="success">{success}</Alert>}
 
-              <Button type="submit" variant="contained" color="primary" size="large" disabled={busy} endIcon={<LoginIcon />}>
+              <Button
+                type="submit"
+                variant="contained"
+                color="primary"
+                size="large"
+                disabled={busy}
+                endIcon={<LoginIcon />}
+              >
                 {mode === "login" ? "Panele Gir" : "Hesap Oluştur"}
               </Button>
             </Stack>
           </Box>
 
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 3, textAlign: "center" }} className="mono">
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: "block", mt: 3, textAlign: "center" }}
+            className="mono"
+          >
             demo: <b>demo</b> / <b>demo123</b>
           </Typography>
         </Box>

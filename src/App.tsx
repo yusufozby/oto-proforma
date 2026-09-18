@@ -11,6 +11,9 @@ import type { Proforma, Session, UsersMap } from "./types";
 import AppointmentsAdmin from "./components/AppointmentsAdmin";
 import AppointmentsCustomer from "./components/AppointmentsCustomer";
 import AdminDashboard from "./components/DashboardAdmin";
+import VerifyEmailScreen from "./components/VerifyEmailScreen";
+import ForgotPasswordScreen from "./components/ForgotPasswordScreen";
+import ResetPasswordScreen from "./components/ResetPasswordScreen";
 const CURRENT_SESSION_KEY = "session:current";
 
 /**
@@ -126,6 +129,9 @@ export default function App() {
               )
             }
           />
+          <Route path="/reset-password" element={<ResetPasswordScreen />} />
+          <Route path="/verify-email" element={<VerifyEmailScreen />} />
+          <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
 
           <Route
             path="/my-appointments"
