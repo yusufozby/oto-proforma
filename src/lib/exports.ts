@@ -206,6 +206,8 @@ async function registerFonts(pdf: jsPDF): Promise<void> {
 // YARDIMCI
 // =========================================================
 
+type Baseline = "top" | "middle" | "bottom" | "alphabetic";
+
 function safeString(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
 }
@@ -217,12 +219,13 @@ function setText(
   y: number,
   size = 9,
   bold = false,
-  color: readonly [number, number, number] = TEXT_DARK
+  color: readonly [number, number, number] = TEXT_DARK,
+  baseline: Baseline = "alphabetic"
 ) {
   pdf.setFont(FONT, bold ? "bold" : "normal");
   pdf.setFontSize(size);
   pdf.setTextColor(...color);
-  pdf.text(safeString(text), x, y);
+  pdf.text(safeString(text), x, y, { baseline });
 }
 
 function drawRightText(
@@ -232,12 +235,13 @@ function drawRightText(
   y: number,
   size = 9,
   bold = false,
-  color: readonly [number, number, number] = TEXT_DARK
+  color: readonly [number, number, number] = TEXT_DARK,
+  baseline: Baseline = "alphabetic"
 ) {
   pdf.setFont(FONT, bold ? "bold" : "normal");
   pdf.setFontSize(size);
   pdf.setTextColor(...color);
-  pdf.text(safeString(text), rightX, y, { align: "right" });
+  pdf.text(safeString(text), rightX, y, { align: "right", baseline });
 }
 
 function splitText(pdf: jsPDF, text: string, maxWidth: number): string[] {
@@ -394,16 +398,16 @@ type ProductColumn = {
 
 function getProductColumns(): ProductColumn[] {
   return [
-    { key: "no", title: "#", width: 6, align: "center" },
-    { key: "image", title: "RESİM", width: 14, align: "center" },   // daha büyük
+    { key: "no", title: "#", width: 7, align: "center" },
+    { key: "image", title: "RESİM", width: 14, align: "center" },
     { key: "kod", title: "KOD", width: 25, align: "left" },
-    { key: "isim", title: "İSİM", width: 55, align: "left" },       // daha büyük
-    { key: "barkod", title: "BARKOD", width: 31, align: "center" }, // daha büyük
+    { key: "isim", title: "İSİM", width: 55, align: "left" },
+    { key: "barkod", title: "BARKOD", width: 31, align: "center" },
     { key: "koliIci", title: "KOLİ\nİÇİ", width: 10, align: "center" },
     { key: "koli", title: "KOLİ", width: 10, align: "center" },
     { key: "totalAdet", title: "TOTAL\nADET", width: 12, align: "center" },
-    { key: "birim", title: "BİRİM", width: 13, align: "right" },
-    { key: "total", title: "FİYAT (₺)", width: 21, align: "right" },
+    { key: "birim", title: "BİRİM", width: 11, align: "right" },
+    { key: "total", title: "FİYAT (₺)", width: 22, align: "right" },
   ];
 }
 
@@ -509,15 +513,12 @@ function drawProductTableHeader(
   pdf.setFillColor(...HEADER_BG);
 
   if (rounded) {
-    // Üst köşeleri yuvarlat, alt köşeler düz
     pdf.roundedRect(x, y, tableWidth, headerHeight, TABLE_RADIUS, TABLE_RADIUS, "F");
     pdf.rect(x, y + headerHeight - TABLE_RADIUS, tableWidth, TABLE_RADIUS, "F");
   } else {
     pdf.rect(x, y, tableWidth, headerHeight, "F");
   }
 
-  // ★ Sadece rounded DEĞİLSE üst çizgiyi çiz
-  // (rounded ise dış roundedRect zaten üst border'ı verecek)
   if (!rounded) {
     drawLine(pdf, x, y, x + tableWidth, y, BORDER, 0.4);
   }
@@ -530,19 +531,21 @@ function drawProductTableHeader(
   for (const column of columns) {
     const lines = column.title.split("\n");
     const lineHeight = 2.7;
-    const startLineY =
-      y + headerHeight / 2 - ((lines.length - 1) * lineHeight) / 2 + 1.2;
+
+    // ★ Dikey ortalama: satırların toplam yüksekliğini hesapla,
+    // hücre ortasından yukarı doğru kaydırarak başla
+    const totalTextHeight = (lines.length - 1) * lineHeight;
+    const firstLineCenterY = y + headerHeight / 2 - totalTextHeight / 2;
 
     lines.forEach((line, index) => {
-      const textY = startLineY + index * lineHeight;
+      const textY = firstLineCenterY + index * lineHeight;
       const textX = columnTextX(column, currentX);
       const align = column.align === "left" ? "left" : column.align;
-      pdf.text(line, textX, textY, { align });
+      pdf.text(line, textX, textY, { align, baseline: "middle" });
     });
     currentX += column.width;
   }
 
-  // Header alt çizgisi her zaman çizilsin
   drawLine(
     pdf,
     x,
@@ -594,14 +597,17 @@ function drawProductRow(
     const lines = splitText(pdf, value, column.width - 2);
     const visibleLines = lines.slice(0, 2);
     const lineHeight = 2.9;
-    const startYText =
-      y + rowHeight / 2 - ((visibleLines.length - 1) * lineHeight) / 2 + 1;
+
+    // ★ Dikey ortalama: satırların toplam yüksekliğini hesapla,
+    // hücre ortasından yukarı doğru kaydırarak başla
+    const totalTextHeight = (visibleLines.length - 1) * lineHeight;
+    const firstLineCenterY = y + rowHeight / 2 - totalTextHeight / 2;
 
     visibleLines.forEach((line, lineIndex) => {
-      const textY = startYText + lineIndex * lineHeight;
+      const textY = firstLineCenterY + lineIndex * lineHeight;
       const textX = columnTextX(column, currentX);
       const align = column.align === "left" ? "left" : column.align;
-      pdf.text(line, textX, textY, { align });
+      pdf.text(line, textX, textY, { align, baseline: "middle" });
     });
 
     currentX += column.width;
@@ -648,12 +654,10 @@ async function drawProductTable(
   while (index < products.length) {
     // Sayfa sonu kontrolü
     if (currentY + rowHeight > PAGE_HEIGHT - MARGIN_BOTTOM - 62) {
-      // Mevcut sayfadaki tablo bloğunun kenarlıklarını kapat (düz)
       drawLine(pdf, MARGIN_LEFT, tableStartY, MARGIN_LEFT, currentY, BORDER, 0.4);
       drawLine(pdf, MARGIN_LEFT + tableWidth, tableStartY, MARGIN_LEFT + tableWidth, currentY, BORDER, 0.4);
       drawLine(pdf, MARGIN_LEFT, currentY, MARGIN_LEFT + tableWidth, currentY, BORDER, 0.4);
 
-      // Yeni sayfa + tablo başlığını tekrar çiz
       pdf.addPage();
       currentY = MARGIN_TOP;
       const h = drawProductTableHeader(pdf, MARGIN_LEFT, currentY, columns, true);
@@ -676,8 +680,7 @@ async function drawProductTable(
     index += 1;
   }
 
-  // ===== SADECE BİR TANE DIŞ ÇERÇEVE (yuvarlatılmış) =====
-  // Eski düz sol/sağ/alt drawLine'ları SİLİNDİ
+  // Dış çerçeve (yuvarlatılmış)
   pdf.setDrawColor(...BORDER);
   pdf.setLineWidth(0.4);
   pdf.roundedRect(
@@ -795,20 +798,20 @@ function drawConditionsAndTotals(
   const usableH = boxH - padTop - padBottom;
   const rowH = usableH / 3;
 
-  const rows: { label: string; value: string; isTotal: boolean }[] = [
-    { label: "Ara Toplam", value: fmt(discountedTotal), isTotal: false },
-    { label: "KDV (%20)", value: fmt(kdv), isTotal: false },
-    { label: "Toplam", value: fmt(grandTotal), isTotal: true },
+  const rows: { label: string; value: string; isTotal: boolean; kdv: boolean }[] = [
+    { label: "Ara Toplam", value: fmt(discountedTotal), isTotal: false, kdv: false },
+    { label: "KDV (%20)", value: fmt(kdv), isTotal: false, kdv: true },
+    { label: "Toplam", value: fmt(grandTotal), isTotal: true, kdv: false },
   ];
 
   rows.forEach((row, idx) => {
     const rowTop = startY + padTop + idx * rowH;
 
-    let baselineY = rowTop + rowH / 2 + 1.2;
+    // ★ Dikey ortalama: satırın üst ve alt sınırı arasındaki tam orta nokta
+    const rowBottom = row.isTotal ? startY + boxH - padBottom : rowTop + rowH;
+    const centerY = (rowTop + rowBottom) / 2;
 
-    if (row.isTotal) {
-      baselineY = rowTop + (boxH - (rowTop - startY)) / 2 + 1.2;
-    }
+    const baselineY = (rowTop + rowBottom) / 2;
 
     if (row.isTotal) {
       pdf.setFillColor(...HEADER_BG);
@@ -827,29 +830,31 @@ function drawConditionsAndTotals(
       pdf,
       row.label,
       rightX + padX,
-      baselineY,
+      row.isTotal ? baselineY + 2 : row.kdv ? baselineY + 0.5 : baselineY,
       row.isTotal ? 9.5 : 8.2,
       true,
-      row.isTotal ? INK : TEXT_LABEL
+      row.isTotal ? INK : TEXT_LABEL,
+      "middle"
     );
 
     drawRightText(
       pdf,
       row.value,
       rightX + rightW - padX,
-      baselineY,
+      row.isTotal ? baselineY + 2 : row.kdv ? baselineY + 0.5 : baselineY,
       row.isTotal ? 11 : 9.2,
       row.isTotal,
-      row.isTotal ? INK : TEXT_DARK
+      row.isTotal ? INK : TEXT_DARK,
+      "middle"
     );
 
     if (idx === 0) {
       const lineY = rowTop + rowH;
       drawLine(
         pdf,
-        rightX + 0.7,
+        rightX + 0.2,            // ← 0.8 → 0.2 (sol boşluk azaltıldı)
         lineY,
-        rightX + rightW - 0.7,
+        rightX + rightW - 0.2,   // ← 0.5 → 0.2 (sağ boşluk azaltıldı)
         lineY,
         BORDER,
         0.35
@@ -886,97 +891,97 @@ function drawPaymentDetails(
   const col2_ValueX = col2_StartX + 25;
   const rightDividerX = col2_StartX + 22;
 
-  // ---- Dış çerçeve: önce fill, sonra stroke (border ezilmesin) ----
+  // =====================================================
+  // 1. FILL'LER (stroke yok)
+  // =====================================================
+
+  // Beyaz arka plan
   pdf.setFillColor(255, 255, 255);
   pdf.roundedRect(x, startY, w, totalH, PAYMENT_RADIUS, PAYMENT_RADIUS, "F");
+
+  // Başlık bar (üst yuvarlak, alt düz)
+  pdf.setFillColor(...HEADER_BG);
+  pdf.roundedRect(x, startY, w, headerH, PAYMENT_RADIUS, PAYMENT_RADIUS, "F");
+  pdf.rect(x, startY + headerH - PAYMENT_RADIUS, w, PAYMENT_RADIUS, "F");
+
+  // =====================================================
+  // 2. İÇ ÇİZGİLER
+  // =====================================================
+
+  pdf.setDrawColor(...BORDER);
+  pdf.setLineWidth(0.4);
+
+  // Başlık altı yatay çizgi
+  pdf.line(x, startY + headerH, x + w, startY + headerH);
+
+  // Sol dikey çizgi (Unvan / IBAN ayırıcı)
+  pdf.line(
+    leftDividerX,
+    startY + headerH,
+    leftDividerX,
+    startY + totalH
+  );
+
+  // Sağ üst dikey çizgi (Banka sütunu)
+  pdf.line(
+    col2_StartX,
+    startY + headerH,
+    col2_StartX,
+    startY + headerH + rowH
+  );
+
+  // Sağ alt dikey çizgi
+  pdf.line(
+    rightDividerX,
+    startY + headerH,
+    rightDividerX,
+    startY + headerH + rowH
+  );
+
+  // Satır 1 alt yatay çizgi
+  const r1Top = startY + headerH;
+  pdf.line(x, r1Top + rowH, x + w, r1Top + rowH);
+
+  // =====================================================
+  // 3. DIŞ ÇERÇEVE (EN SON — üst ve alt border aynı olur)
+  // =====================================================
 
   pdf.setDrawColor(...BORDER);
   pdf.setLineWidth(0.4);
   pdf.roundedRect(x, startY, w, totalH, PAYMENT_RADIUS, PAYMENT_RADIUS, "S");
 
-  // ---- Başlık bar (üst köşeler yuvarlatılmış, alt düz) ----
-  pdf.setFillColor(...HEADER_BG);
-  pdf.roundedRect(x, startY, w, headerH, PAYMENT_RADIUS, PAYMENT_RADIUS, "F");
-  // alt kısmı kapat (radius’u yok et)
-  pdf.rect(x, startY + headerH - PAYMENT_RADIUS, w, PAYMENT_RADIUS, "F");
+  // =====================================================
+  // 4. METİNLER
+  // =====================================================
 
-  // Başlık metni
+  // Başlık
   pdf.setFont(FONT, "bold");
   pdf.setFontSize(7.5);
   pdf.setTextColor(...INK);
-  const headerBaseline = startY + headerH / 2 + 1.2;
-  pdf.text("Ödeme Detayları", x + w / 2, headerBaseline, { align: "center" });
-
-  // Başlık alt çizgi
-  drawLine(pdf, x + 0.5, startY + headerH, x + w - 0.5, startY + headerH, BORDER, 0.35);
-
-  // =====================================================
-  // DİKEY ÇİZGİLER
-  // =====================================================
-
-  // 1) Unvan / IBAN sağındaki çizgi (2 satır)
-  drawLine(
-    pdf,
-    leftDividerX,
-    startY + headerH,
-    leftDividerX,
-    startY + headerH + rowH * 2,
-    BORDER,
-    0.4
-  );
-
-  // 2) Banka solundaki çizgi (sadece 1. satır)
-  drawLine(
-    pdf,
-    col2_StartX,
-    startY + headerH,
-    col2_StartX,
-    startY + headerH + rowH,
-    BORDER,
-    0.4
-  );
-
-  // 3) Banka sağındaki çizgi (sadece 1. satır)
-  drawLine(
-    pdf,
-    rightDividerX,
-    startY + headerH,
-    rightDividerX,
-    startY + headerH + rowH,
-    BORDER,
-    0.4
-  );
+  pdf.text("Ödeme Detayları", x + w / 2, startY + headerH / 2, {
+    align: "center",
+    baseline: "middle",
+  });
 
   // ----- Satır 1 -----
-  const r1Top = startY + headerH;
-  const r1Baseline = r1Top + rowH / 2 + 1.0;
+  const r1Baseline = r1Top + rowH / 2;
 
-  setText(pdf, "Unvan", col1_LabelX, r1Baseline, 7, true, TEXT_LABEL);
-  setText(pdf, safeString(pf.pay_title), col1_ValueX, r1Baseline, 7.5, false, TEXT_DARK);
+  setText(pdf, "Unvan", col1_LabelX + 2, r1Baseline, 7, true, TEXT_LABEL, "middle");
+  setText(pdf, safeString(pf.pay_title), col1_ValueX, r1Baseline, 7.5, false, TEXT_DARK, "middle");
 
-  setText(pdf, "Banka", col2_LabelX, r1Baseline, 7, true, TEXT_LABEL);
-  setText(pdf, pf.bank ?? "", col2_ValueX, r1Baseline, 7.5, false, TEXT_DARK);
-
-  // Satır 1 alt yatay çizgi (diğerleriyle aynı kalınlık)
-  drawLine(
-    pdf,
-    x + 0.5,
-    r1Top + rowH,
-    x + w - 0.5,
-    r1Top + rowH,
-    BORDER,
-    0.4
-  );
+  setText(pdf, "Banka", col2_LabelX + 2, r1Baseline, 7, true, TEXT_LABEL, "middle");
+  setText(pdf, pf.bank ?? "", col2_ValueX, r1Baseline, 7.5, false, TEXT_DARK, "middle");
 
   // ----- Satır 2 -----
   const r2Top = r1Top + rowH;
-  const r2Baseline = r2Top + rowH / 2 + 1.0;
+  const r2Baseline = r2Top + rowH / 2;
 
-  setText(pdf, "IBAN", col1_LabelX, r2Baseline, 7, true, TEXT_LABEL);
-  setText(pdf, safeString(pf.iban), col1_ValueX, r2Baseline, 7.5, false, TEXT_DARK);
+  setText(pdf, "IBAN", col1_LabelX + 2, r2Baseline, 7, true, TEXT_LABEL, "middle");
+  setText(pdf, safeString(pf.iban), col1_ValueX, r2Baseline, 7.5, false, TEXT_DARK, "middle");
 
   return startY + totalH + 8;
 }
+
 // =========================================================
 // FOOTER
 // =========================================================

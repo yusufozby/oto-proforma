@@ -19,6 +19,18 @@ interface AppointmentsAdminProps {
     onLogout: () => void;
 }
 
+// Uygulama her zaman Türkiye saatine göre çalışıyor; tarayıcının kendi
+// saat dilimi ne olursa olsun tarihleri hep Europe/Istanbul'a göre
+// gösteriyoruz. Türkiye artık yaz saati uygulamadığı için sabit +03:00.
+const ISTANBUL_TZ = "Europe/Istanbul";
+
+// Backend'den gelen UTC ISO string'i ("...Z" ile biten) İstanbul saatine
+// çevirip okunabilir formatta döndürür.
+function formatIstanbul(iso: string) {
+    if (!iso) return "";
+    return new Date(iso).toLocaleString("tr-TR", { timeZone: ISTANBUL_TZ });
+}
+
 // .NET'ten gelen hata gövdesi string / {message} / ValidationProblemDetails
 // olarak dönebilir — LoginScreen'deki ile aynı yardımcı.
 async function extractErrorMessage(response: Response, fallback: string) {
@@ -209,7 +221,7 @@ export default function AppointmentsAdmin({ session, onLogout }: AppointmentsAdm
                                     <TableRow key={a.id} hover>
                                         <TableCell>{a.firm || a.username || `#${a.user_id}`}</TableCell>
                                         <TableCell className="mono">
-                                            {new Date(a.appointment_date).toLocaleString("tr-TR")}
+                                            {formatIstanbul(a.appointment_date)}
                                         </TableCell>
                                         <TableCell sx={{ maxWidth: 280 }}>{a.description}</TableCell>
                                         <TableCell align="center">
@@ -277,4 +289,4 @@ export default function AppointmentsAdmin({ session, onLogout }: AppointmentsAdm
             </Dialog>
         </Box>
     );
-}
+}   

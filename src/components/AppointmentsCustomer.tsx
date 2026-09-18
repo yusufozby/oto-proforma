@@ -19,6 +19,13 @@ interface AppointmentsCustomerProps {
     onLogout: () => void;
 }
 
+// Uygulama her zaman Türkiye saatine göre çalışıyor; tarayıcının kendi
+// saat dilimi ne olursa olsun tarihleri hep Europe/Istanbul'a göre
+// gösteriyor ve öyle kaydediyoruz. Türkiye artık yaz saati uygulamadığı
+// için sabit +03:00 offset kullanmak güvenli.
+const ISTANBUL_TZ = "Europe/Istanbul";
+const ISTANBUL_OFFSET = "+03:00";
+
 async function extractErrorMessage(response: Response, fallback: string) {
     const raw = await response.text();
     if (!raw) return fallback;
@@ -44,12 +51,38 @@ function statusColor(status: string): "warning" | "success" | "error" | "default
     return "default";
 }
 
-// <input type="datetime-local"> value'su için ISO -> "YYYY-MM-DDTHH:mm"
-function toDatetimeLocal(iso: string) {
+// Backend'den gelen UTC ISO string'i ("...Z" ile biten) İstanbul saatine
+// çevirip okunabilir formatta döndürür.
+function formatIstanbul(iso: string) {
     if (!iso) return "";
-    const d = new Date(iso);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return new Date(iso).toLocaleString("tr-TR", { timeZone: ISTANBUL_TZ });
+}
+
+// UTC ISO -> <input type="datetime-local"> value'su, İstanbul saatine göre
+// ("YYYY-MM-DDTHH:mm"). Tarayıcının kendi saat dilimine bakmaksızın her
+// zaman İstanbul saatini üretir.
+function isoToIstanbulLocalInput(iso: string) {
+    if (!iso) return "";
+    const date = new Date(iso);
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: ISTANBUL_TZ,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    }).formatToParts(date);
+
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+    return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+}
+
+// <input type="datetime-local"> değeri ("YYYY-MM-DDTHH:mm", İstanbul saati
+// olarak girildiği varsayılır) -> gerçek UTC ISO string.
+function istanbulLocalInputToIso(value: string) {
+    if (!value) return "";
+    return new Date(`${value}:00${ISTANBUL_OFFSET}`).toISOString();
 }
 
 export default function AppointmentsCustomer({ session, onLogout }: AppointmentsCustomerProps) {
@@ -103,7 +136,7 @@ export default function AppointmentsCustomer({ session, onLogout }: Appointments
 
     const openEditDialog = (a: Appointment) => {
         setEditing(a);
-        setFormDate(toDatetimeLocal(a.appointment_date));
+        setFormDate(isoToIstanbulLocalInput(a.appointment_date));
         setFormDescription(a.description);
         setDialogOpen(true);
     };
@@ -117,7 +150,7 @@ export default function AppointmentsCustomer({ session, onLogout }: Appointments
         setError("");
         try {
             const body = JSON.stringify({
-                appointment_date: new Date(formDate).toISOString(),
+                appointment_date: istanbulLocalInputToIso(formDate),
                 description: formDescription.trim(),
             });
 
@@ -174,7 +207,7 @@ export default function AppointmentsCustomer({ session, onLogout }: Appointments
             setBusy(false);
         }
     };
-    console.log(appointments);
+
     return (
         <Box sx={{ minHeight: 600 }}>
             <AppBar
@@ -222,7 +255,7 @@ export default function AppointmentsCustomer({ session, onLogout }: Appointments
                                     <Box sx={{ minWidth: 0 }}>
                                         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
                                             <Typography fontWeight={600} className="mono">
-                                                {new Date(a.appointment_date).toLocaleString("tr-TR")}
+                                                {formatIstanbul(a.appointment_date)}
                                             </Typography>
                                             <Chip size="small" color={statusColor(a.status)} label={a.status} />
                                         </Stack>
