@@ -23,6 +23,7 @@ import SubtitlesIcon from "@mui/icons-material/Subtitles";
 import { tl, structuredCloneLite, resolveImageUrl } from "../lib/helpers";
 import { baseApi } from "../lib/storage";
 import { Proforma, Product, ProductProforma } from "../types";
+import CustomPhoneInput from "../customs/masks/CustomPhoneInput";
 
 interface Session {
   token: string;
@@ -611,7 +612,17 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                 <TextField label="Adres" fullWidth size="small" value={pf.address ?? ""} onChange={(e) => update(["address"], e.target.value)} />
               </Grid>
               <Grid item xs={12} sm={6}>
-                <TextField label="Telefon" fullWidth size="small" value={pf.phone ?? ""} onChange={(e) => update(["phone"], e.target.value)} />
+                <TextField
+                  label="Telefon"
+                  fullWidth
+                  size="small"
+                  value={pf.phone ?? ""}
+                  onChange={(e) => update(["phone"], e.target.value)}
+                  placeholder="0(5xx) xxx xx xx"
+                  InputProps={{
+                    inputComponent: CustomPhoneInput as any,
+                  }}
+                />
               </Grid>
               <Grid item xs={12} sm={6}>
                 <TextField label="E-mail" fullWidth size="small" value={pf.buyer_email ?? ""} onChange={(e) => update(["buyer_email"], e.target.value)} />
@@ -624,7 +635,17 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
                 <TextField label="Muhattap Ünvan" fullWidth size="small" value={pf.interlocuter_title ?? ""} onChange={(e) => update(["interlocuter_title"], e.target.value)} />
               </Grid>
               <Grid item xs={12} sm={6}>
-                <TextField label="Muhattap Telefon" fullWidth size="small" value={pf.interlocuter_phone ?? ""} onChange={(e) => update(["interlocuter_phone"], e.target.value)} />
+                <TextField
+                  label="Muhattap Telefon"
+                  fullWidth
+                  size="small"
+                  value={pf.interlocuter_phone ?? ""}
+                  onChange={(e) => update(["interlocuter_phone"], e.target.value)}
+                  placeholder="0(5xx) xxx xx xx"
+                  InputProps={{
+                    inputComponent: CustomPhoneInput as any,
+                  }}
+                />
               </Grid>
               <Grid item xs={12} sm={6}>
                 <TextField label="Muhattap E-mail" fullWidth size="small" value={pf.interlocuter_email ?? ""} onChange={(e) => update(["interlocuter_email"], e.target.value)} />

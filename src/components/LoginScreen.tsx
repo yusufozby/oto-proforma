@@ -12,6 +12,7 @@ import PersonAddIcon from "@mui/icons-material/PersonAdd";
 
 import type { Session } from "../types";
 import { baseApi } from "../lib/storage";
+import CustomPhoneInput from "../customs/masks/CustomPhoneInput";
 
 interface LoginScreenProps {
   onLogin: (session: Session) => void;
@@ -157,25 +158,25 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     }
   };
 
-  const formatPhoneTR = (raw: string) => {
-    let digits = raw.replace(/\D/g, "");
-    if (digits.startsWith("0")) digits = digits.slice(1);
-    digits = digits.slice(0, 10);
-
-    if (digits.length === 0) return "";
-
-    let out = "0(" + digits.slice(0, 3);
-    if (digits.length >= 3) out += ")";
-    if (digits.length > 3) out += " " + digits.slice(3, 6);
-    if (digits.length > 6) out += " " + digits.slice(6, 8);
-    if (digits.length > 8) out += " " + digits.slice(8, 10);
-    return out;
-  };
-
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setPhone(formatPhoneTR(e.target.value));
-  };
+    // Sadece rakamları al
+    let value = e.target.value.replace(/\D/g, "");
 
+    // Maksimum 11 hane (0 ile birlikte)
+    value = value.substring(0, 11);
+
+    // Format: 0 5xx xxx xx xx
+    let formatted = value;
+    if (value.length > 0) {
+      formatted = value.substring(0, 1); // 0
+      if (value.length > 1) formatted += ` ${value.substring(1, 4)}`; // 5xx
+      if (value.length > 4) formatted += ` ${value.substring(4, 7)}`; // xxx
+      if (value.length > 7) formatted += ` ${value.substring(7, 9)}`; // xx
+      if (value.length > 9) formatted += ` ${value.substring(9, 11)}`; // xx
+    }
+
+    setPhone(formatted);
+  };
   return (
     <Box sx={{ minHeight: 600, width: "100%", display: "flex" }}>
       {/* sol marka paneli */}
@@ -265,10 +266,13 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                   <TextField
                     label="Telefon"
                     value={phone}
-                    onChange={handlePhoneChange}
+                    onChange={(e) => setPhone(e.target.value)} // State güncellemesi burada yapılıyor
                     fullWidth
                     placeholder="0(5xx) xxx xx xx"
-                    inputProps={{ inputMode: "numeric", maxLength: 16 }}
+                    InputProps={{
+                      inputComponent: CustomPhoneInput as any,
+                    }}
+                  // inputProps'u kaldırdık çünkü IMask kendi içinde yönetiyor
                   />
                   <TextField
                     label="Firma Adı"
