@@ -227,7 +227,14 @@ function initialColumnState(): Record<ColumnKey, boolean> {
   COLUMNS.forEach((c) => { s[c.key] = c.defaultOpen; });
   return s;
 }
-
+// Bileşenin üstünde bir yerde (COLUMNS'un yanı, ya da helpers.ts'e taşıyabilirsin)
+function toDateInputValue(value: unknown): string {
+  if (!value) return "";
+  const str = String(value);
+  // "2024-01-15T00:00:00.000Z" -> "2024-01-15"
+  // "2024-01-15" zaten olduğu gibi kalır
+  return str.slice(0, 10);
+}
 export default function ProformaEditor({ session, isEdit }: ProformaEditorProps) {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -562,8 +569,9 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6}>
               <TextField
+                disabled
                 type="date" label="Tarih" fullWidth size="small"
-                value={pf.created_date ?? ""}
+                value={toDateInputValue(pf.created_date)}
                 onChange={(e) => update(["created_date"], e.target.value)}
                 InputLabelProps={{ shrink: true }}
               />
@@ -571,7 +579,7 @@ export default function ProformaEditor({ session, isEdit }: ProformaEditorProps)
             <Grid item xs={12} sm={6}>
               <TextField
                 type="date" label="Geçerlilik" fullWidth size="small"
-                value={pf.validity_date ?? ""}
+                value={toDateInputValue(pf.validity_date)}
                 onChange={(e) => update(["validity_date"], e.target.value)}
                 InputLabelProps={{ shrink: true }}
               />

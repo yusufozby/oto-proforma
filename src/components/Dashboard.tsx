@@ -354,7 +354,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                 startIcon={<EventNoteIcon />}
                 onClick={() => navigate("/my-appointments")}
               >
-                Randevularım
+                Destek Talebi Oluştur
               </Button>
             )}
             {session.role === "müşteri" && <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={() => navigate("/proforma/add")}>
