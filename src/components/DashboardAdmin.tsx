@@ -17,6 +17,9 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import InsertDriveFileOutlinedIcon from "@mui/icons-material/InsertDriveFileOutlined";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import FolderZipIcon from "@mui/icons-material/FolderZip";
+import ImageIcon from "@mui/icons-material/Image";
+import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 import { baseApi } from "../lib/storage";
 import type { Session } from "../types";
 
@@ -166,6 +169,12 @@ export default function AdminDashboard({ session, onLogout }: AdminDashboardProp
     const [excelErr, setExcelErr] = useState("");
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
+    // GÖRSEL ARŞİVİ STATE'LERİ
+    const [imageBusy, setImageBusy] = useState(false);
+    const [imageMsg, setImageMsg] = useState("");
+    const [imageErr, setImageErr] = useState("");
+    const [imageDeleteConfirmOpen, setImageDeleteConfirmOpen] = useState(false);
+
     const loadCustomers = async () => {
         setLoading(true);
         setError("");
@@ -310,6 +319,70 @@ export default function AdminDashboard({ session, onLogout }: AdminDashboardProp
         }
     };
 
+    // GÖRSEL ARŞİVİ YÜKLEME
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        if (!file) return;
+
+        const lower = file.name.toLowerCase();
+        if (!lower.endsWith(".zip") && !lower.endsWith(".rar")) {
+            setImageErr("Sadece .zip veya .rar dosyaları yükleyebilirsiniz.");
+            setImageMsg("");
+            return;
+        }
+
+        setImageBusy(true);
+        setImageErr("");
+        setImageMsg("");
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const response = await fetch(`${baseApi}/api/Image/upload`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${session.token}` },
+                body: formData,
+            });
+
+            if (!response.ok) {
+                setImageErr(await extractErrorMessage(response, "Arşiv yüklenemedi."));
+                return;
+            }
+
+            setImageMsg("Arşiv başarıyla çıkarıldı ");
+        } catch {
+            setImageErr("Sunucuya bağlanılamadı.");
+        } finally {
+            setImageBusy(false);
+        }
+    };
+
+    // GÖRSEL ARŞİVİ TEMİZLEME
+    const handleImageDelete = async () => {
+        setImageBusy(true);
+        setImageErr("");
+        setImageMsg("");
+        try {
+            const response = await fetch(`${baseApi}/api/Image/clear`, {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${session.token}` },
+            });
+
+            if (!response.ok) {
+                setImageErr(await extractErrorMessage(response, "Görseller silinemedi."));
+                return;
+            }
+
+            setImageMsg(" Tüm görseller veritabanından silindi.");
+        } catch {
+            setImageErr("Sunucuya bağlanılamadı.");
+        } finally {
+            setImageBusy(false);
+            setImageDeleteConfirmOpen(false);
+        }
+    };
+
     const chartData = useMemo(
         () =>
             [...customers]
@@ -411,6 +484,63 @@ export default function AdminDashboard({ session, onLogout }: AdminDashboardProp
 
                     <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.5 }}>
                         Yeni bir Excel yüklediğinizde önceki dosya otomatik olarak değiştirilir. Sistemde her zaman tek bir aktif ürün kataloğu bulunur.
+                    </Typography>
+                </Card>
+
+                {/* GÖRSEL ARŞİVİ KARTI */}
+                <Card variant="outlined" sx={{ p: 2.5, mb: 3 }}>
+                    <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 1.5 }}>
+                        <Box
+                            sx={{
+                                width: 34, height: 34, borderRadius: 1.5,
+                                bgcolor: "primary.light",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                            }}
+                        >
+                            <ImageIcon fontSize="small" color="primary" />
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle1" fontWeight={700}>
+                                Görseller (Arşiv)
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                .zip veya .rar yükleyin — içeriği
+                            </Typography>
+                        </Box>
+                    </Stack>
+
+                    {imageErr && <Alert severity="error" sx={{ mb: 1.5 }}>{imageErr}</Alert>}
+                    {imageMsg && <Alert severity="success" sx={{ mb: 1.5 }}>{imageMsg}</Alert>}
+
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                        <Button
+                            component="label"
+                            variant="contained"
+                            startIcon={imageBusy ? <CircularProgress size={16} color="inherit" /> : <FolderZipIcon />}
+                            disabled={imageBusy}
+                        >
+                            {imageBusy ? "İşleniyor..." : "Arşiv Yükle"}
+                            <input
+                                type="file"
+                                accept=".zip,.rar"
+                                hidden
+                                onChange={handleImageUpload}
+                            />
+                        </Button>
+
+                        <Button
+                            variant="outlined"
+                            color="error"
+                            startIcon={<DeleteSweepIcon />}
+                            onClick={() => setImageDeleteConfirmOpen(true)}
+                            disabled={imageBusy}
+                        >
+                            Tüm Görselleri Sil
+                        </Button>
+                    </Stack>
+
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.5 }}>
+                        Aynı isimde bir dosya daha önce yüklenmişse otomatik olarak yenisiyle değiştirilir.
                     </Typography>
                 </Card>
 
@@ -536,6 +666,43 @@ export default function AdminDashboard({ session, onLogout }: AdminDashboardProp
                         startIcon={excelBusy ? <CircularProgress size={16} color="inherit" /> : <DeleteOutlineIcon />}
                     >
                         {excelBusy ? "Siliniyor..." : "Sil"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* GÖRSEL SİLME ONAY DİYALOĞU */}
+            <Dialog
+                open={imageDeleteConfirmOpen}
+                onClose={() => setImageDeleteConfirmOpen(false)}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle>Görseller Silinecek</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        klasörünün tamamı ve içindeki <b>tüm görseller</b> kalıcı olarak silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button
+                        onClick={() => setImageDeleteConfirmOpen(false)}
+                        disabled={imageBusy}
+                        color="inherit"
+                    >
+                        Vazgeç
+                    </Button>
+                    <Button
+                        onClick={handleImageDelete}
+                        color="error"
+                        variant="contained"
+                        disabled={imageBusy}
+                        startIcon={
+                            imageBusy
+                                ? <CircularProgress size={16} color="inherit" />
+                                : <DeleteSweepIcon />
+                        }
+                    >
+                        {imageBusy ? "Siliniyor..." : "Sil"}
                     </Button>
                 </DialogActions>
             </Dialog>
