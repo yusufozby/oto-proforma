@@ -402,16 +402,16 @@ type ProductColumn = {
 
 function getProductColumns(): ProductColumn[] {
   return [
-    { key: "no", title: "#", width: 7, align: "center" },
+    { key: "no", title: "#", width: 6, align: "center" },
     { key: "image", title: "RESİM", width: 14, align: "center" },
-    { key: "kod", title: "KOD", width: 25, align: "left" },
-    { key: "isim", title: "İSİM", width: 40, align: "left" },
+    { key: "kod", title: "KOD", width: 22, align: "left" },
+    { key: "isim", title: "İSİM", width: 42, align: "left" },
     { key: "barkod", title: "BARKOD", width: 31, align: "center" },
     { key: "koliIci", title: "KOLİ\nİÇİ", width: 10, align: "center" },
     { key: "koli", title: "KOLİ", width: 10, align: "center" },
     { key: "totalAdet", title: "TOTAL\nADET", width: 12, align: "center" },
     { key: "birim", title: "BİRİM", width: 12, align: "right" },
-    { key: "total", title: "FİYAT (₺)", width: 23, align: "right" },
+    { key: "total", title: "FİYAT (₺)", width: 26, align: "right" },
   ];
 }
 
